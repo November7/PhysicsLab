@@ -1,0 +1,20 @@
+[
+  {
+    "title": "Zasady dynamiki Newtona",
+    "description": "Interaktywne laboratorium: zasady dynamiki Newtona.",
+    "url": "newton.html",
+    "status": "published"
+  },
+  {
+    "title": "Optyka",
+    "description": "Interaktywne laboratorium: zjawiska optyczne.",
+    "url": "optics.html",
+    "status": "published"
+  },
+  {
+    "title": "Pole magnetyczne",
+    "description": "Pole magnetyczne przewodników z prądem: linie pola, kierunek prądu i zasada superpozycji.",
+    "url": "magnetic-field.html",
+    "status": "published"
+  }
+]

@@ -1,0 +1,987 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zasady dynamiki Newtona · PhysicsLab</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="brand-mark">⚛</div>
+    <a class="brand" href="./">Physics<span>Lab</span></a>
+    <div class="offline">działa offline</div>
+  </div>
+</header>
+
+<main>
+  <section class="intro">
+    <div class="eyebrow">Mechanika</div>
+    <h1>Zasady dynamiki Newtona</h1>
+    <p class="muted">Wybierz zasadę i przykład. Przeciągaj obiekty lub zmieniaj parametry suwakami i obserwuj ruch oraz wektory.</p>
+  </section>
+
+  <div class="lab">
+    <aside class="card lessons">
+      <div class="section-top"><h2>Zasady dynamiki</h2><span class="count-badge">3 zasady</span></div>
+      <div class="lesson-list" id="lessons"></div>
+      <div class="lesson-info" id="law"></div>
+      <div class="legend">
+        <span style="--color:#2a9d8f"><i></i>prędkość v</span>
+        <span style="--color:#d6a100"><i></i>przyspieszenie a</span>
+        <span style="--color:#eb8b4e"><i></i>siła zewnętrzna F</span>
+        <span style="--color:#c0392b"><i></i>tarcie T</span>
+        <span style="--color:#7a5cc4"><i></i>ciężar Q</span>
+        <span style="--color:#315fb1"><i></i>reakcja podłoża N</span>
+      </div>
+    </aside>
+
+    <section class="card workbench">
+      <div class="bench-top">
+        <div>
+          <div class="bench-label" id="bench-label"></div>
+          <div class="bench-title" id="bench-title"></div>
+        </div>
+        <div class="bench-actions">
+          <div class="seg" role="group" aria-label="Widok">
+            <button type="button" id="view-sim" class="active" aria-pressed="true">Symulacja</button>
+            <button type="button" id="view-graph" aria-pressed="false">Wykresy</button>
+          </div>
+          <button class="tool primary" id="btn-start" type="button">▶ Start</button>
+          <button class="tool" id="btn-run" type="button">Pauza</button>
+          <button class="tool" id="btn-stop" type="button">■ Stop</button>
+          <button class="tool" id="btn-reset" type="button">Reset</button>
+        </div>
+      </div>
+
+      <div class="example-picker">
+        <label for="example">Przykład</label>
+        <select id="example"></select>
+        <p id="example-hint"></p>
+      </div>
+
+      <div class="stage">
+        <svg id="svg" viewBox="0 0 900 400" role="img" aria-label="Symulacja"></svg>
+      </div>
+
+      <div class="controls" id="controls"></div>
+
+      <div class="formulas">
+        <div><h3>Wzory</h3><div class="eq" id="formulas"></div></div>
+        <div><h3>Wartości na żywo</h3><div class="eq" id="live"></div><div class="status" id="status"></div></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>Jednostki SI: m [kg], F [N], a [m/s²], v [m/s], g = 9,81 m/s². Schemat sił dla ruchu postępowego: wektory sił rysujemy ze środka masy (kropka), pomijając obrót. Rzeczywiste siły kontaktowe działają w miejscach kontaktu. Wektory prędkości i przyspieszenia mogą być odsunięte dla czytelności. Długość wektorów jest ograniczona do pola animacji; dokładne wartości podają etykiety. Tarcie: uproszczony model z jednakowym współczynnikiem tarcia statycznego i kinetycznego.</footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+
+const G = 9.81;
+const SCALE = 50;          // px na metr w symulacjach 1 i 2
+const GROUND = 320;
+const BODY_WIDTH = 72, BODY_HEIGHT = 52;
+const COLORS = { v: '#2a9d8f', a: '#d6a100', F: '#eb8b4e', T: '#c0392b', Q: '#7a5cc4', N: '#315fb1' };
+
+const svg = document.getElementById('svg');
+const $ = id => document.getElementById(id);
+const sign = x => (x > 0) - (x < 0);
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const f = (x, d = 1) => { const s = (Math.abs(x) < 0.5 * Math.pow(10, -d) ? 0 : x).toFixed(d); return s.replace('.', ','); };
+const num = (x, d = 1, u = '') => `<span class="num">${f(x, d)}${u ? '&nbsp;' + u : ''}</span>`;
+
+svg.innerHTML = `<defs>${Object.entries(COLORS).map(([k, c]) =>
+  `<marker id="m-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 1L10 5L0 9z" fill="${c}"/></marker>`).join('')}</defs><g id="scene"></g>`;
+const scene = svg.querySelector('#scene');
+
+// mode: idle | running | paused | stopped
+const state = { showVectors: true, speed: 1, mode: 'idle', view: 'sim' };
+const VW = 900, VH = 400, GH = 640;
+
+function arrow(x1, y1, x2, y2, key, label, dx = 0, dy = -7, always = false) {
+  if (!state.showVectors && !always) return '';
+  const vx = x2 - x1, vy = y2 - y1, length = Math.hypot(vx, vy), pad = 18;
+  if (length < 3 || x1 < pad || x1 > VW - pad || y1 < pad || y1 > VH - pad) return '';
+  // Jeden współczynnik skraca obie składowe, zachowując kierunek wektora.
+  let ratio = Math.min(1, 200 / length);
+  if (vx > 0) ratio = Math.min(ratio, (VW - pad - x1) / vx);
+  if (vx < 0) ratio = Math.min(ratio, (pad - x1) / vx);
+  if (vy > 0) ratio = Math.min(ratio, (VH - pad - y1) / vy);
+  if (vy < 0) ratio = Math.min(ratio, (pad - y1) / vy);
+  x2 = x1 + vx * ratio; y2 = y1 + vy * ratio;
+  const labelPad = Math.min(VW / 2, Math.max(24, label.length * 4.5 + 12));
+  const c = COLORS[key];
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.5" marker-end="url(#m-${key})"/>` +
+    `<text x="${clamp(x2 + dx, labelPad, VW - labelPad)}" y="${clamp(y2 + dy, 20, VH - 14)}" text-anchor="middle" font-size="14" font-weight="400" style="fill:${c};paint-order:stroke;stroke:#f9fbfe;stroke-width:2px">${label}</text>`;
+}
+
+function horizontalForces(s, F) {
+  const limit = s.p.mu * s.p.m * G;
+  const T = s.v === 0 ? -sign(F) * Math.min(Math.abs(F), limit) : -sign(s.v) * limit;
+  return { T, net: F + T, a: (F + T) / s.p.m };
+}
+
+function moveHorizontal(s, F, dt) {
+  const { a } = horizontalForces(s, F);
+  const stop = a * s.v < 0 ? -s.v / a : Infinity;
+  if (stop <= dt) {
+    s.x += s.v * stop + a * stop * stop / 2;
+    s.v = 0;
+    const rest = dt - stop, next = horizontalForces(s, F).a;
+    s.x += next * rest * rest / 2;
+    s.v = next * rest;
+  } else {
+    s.x += s.v * dt + a * dt * dt / 2;
+    s.v += a * dt;
+  }
+}
+
+function tickStep(span) {
+  const base = 10 ** Math.floor(Math.log10(Math.max(span, 0.001)));
+  return [1, 2, 5, 10].find(n => n * base >= span) * base;
+}
+
+function text(x, y, s, size = 13, anchor = 'start', weight = 500) {
+  return `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}" font-weight="${weight}">${s}</text>`;
+}
+
+function ground(xpx, mu) {
+  let s = `<rect x="0" y="${GROUND}" width="900" height="100" fill="${mu === 0 ? '#dcecf7' : '#e3e9f1'}"/>` +
+    `<line x1="0" x2="900" y1="${GROUND}" y2="${GROUND}" stroke="#7d8da6" stroke-width="2"/>`;
+  const off = ((xpx % SCALE) + SCALE) % SCALE;
+  for (let i = -1; i < 20; i++) {
+    const x = i * SCALE - off;
+    s += `<line x1="${x}" x2="${x}" y1="${GROUND}" y2="${GROUND + 10}" stroke="#7d8da6"/>`;
+  }
+  if (mu === 0) s += text(14, GROUND + 38, 'lód, brak tarcia', 12, 'start', 600);
+  else s += text(14, GROUND + 38, `podłoże: μ = ${f(mu, 2)}`, 12, 'start', 600);
+  s += text(14, GROUND + 56, 'znaczniki co 1 m', 11);
+  return s;
+}
+
+function block(w, h, label, fill = '#b9cdf3') {
+  const x = 450 - w / 2, y = GROUND - h;
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${fill}" stroke="#315fb1" stroke-width="2"/>` +
+    `<text x="450" y="${y - 6}" text-anchor="middle" font-size="14" font-weight="750">${label}</text>`;
+}
+
+const FSCALE = 4; // px na 1 N dla wektora siły przeciąganego myszą
+
+function dragForce(px, w) {
+  const d = px - 450;
+  return Math.abs(d) <= w / 2 ? 0 : clamp(Math.round(sign(d) * (Math.abs(d) - w / 2) / FSCALE), -50, 50);
+}
+
+function massCenter(x, y, always = false) {
+  if (!state.showVectors && !always) return '';
+  return `<circle class="mass-center" cx="${x}" cy="${y}" r="3.5" fill="#182a45" stroke="#fff" stroke-width="1.5"><title>Środek masy w modelu</title></circle>`;
+}
+
+function dragArrow(F, cy, label) {
+  return arrow(450, cy, 450 + F * FSCALE, cy, 'F', label, 0, -10, true);
+}
+
+const kinematicPlots = [
+  { label: 'Położenie x', unit: 'm', series: [{ k: 'x', name: 'x', c: COLORS.Q }] },
+  { label: 'Prędkość v', unit: 'm/s', series: [{ k: 'v', name: 'v', c: COLORS.v }] },
+  { label: 'Przyspieszenie a', unit: 'm/s²', series: [{ k: 'a', name: 'a', c: COLORS.a }] }
+];
+
+/* ---------- Symulacja 1: bezwładność ---------- */
+const sim1 = {
+  example: 'Klocek - bezwładność',
+  label: 'I zasada dynamiki', title: 'Bezwładność: ciało bez siły wypadkowej',
+  sub: 'Prawo bezwładności',
+  law: '<b>Jeżeli na ciało nie działa siła wypadkowa (ΣF = 0), to pozostaje ono w spoczynku lub porusza się ruchem jednostajnym prostoliniowym.</b><br><br>Podłoże jest zawsze bez tarcia. Popchnij klocek i obserwuj ruch po zakończeniu popchnięcia: prędkość pozostaje stała, a przyspieszenie wynosi 0.<br><br>Samo popchnięcie jest przygotowaniem doświadczenia: podczas działania siły prędkość zmienia się zgodnie z II zasadą. I zasadę pokazuje późniejszy swobodny ruch. Tarcie możesz badać w przykładzie II zasady.',
+  controls: [
+    { id: 'm', label: 'Masa m', min: 0.5, max: 10, step: 0.5, value: 2, unit: 'kg', dec: 1 },
+    { id: 'dt', label: 'Czas działania siły Δt', min: 0.1, max: 1, step: 0.05, value: 0.3, unit: 's', dec: 2 }
+  ],
+  buttons: [],
+  formulas: 'Po popchnięciu: ΣF = 0 ⇒ a = 0, v = const<br>Q = m·g, N = Q<br>Podczas popchnięcia: Δv = F·Δt / m',
+  plots: kinematicPlots,
+  span: () => 10,
+  sample(s) { return { x: s.x, v: s.v, a: this.calc(s).a }; },
+  reset(s) { s.x = 0; s.v = 0; s.push = null; s.drag = null; },
+  size(s) { return 56 + s.p.m * 4; },
+  hit(s, p) { const w = this.size(s); return Math.abs(p.x - 450) <= w / 2 + 8 && p.y >= GROUND - w - 8 && p.y <= GROUND; },
+  dragMove(s, p) { s.drag = { F: dragForce(p.x, this.size(s)) }; },
+  dragEnd(s) {
+    const F = s.drag ? s.drag.F : 0;
+    s.drag = null;
+    if (F) s.push = { F, left: s.p.dt };
+    return !!F;
+  },
+  step(s, dt) {
+    const active = s.push ? Math.min(dt, s.push.left) : 0;
+    if (active > 0) {
+      const a = s.push.F / s.p.m;
+      s.x += s.v * active + a * active * active / 2;
+      s.v += a * active;
+      s.push.left -= active;
+      if (s.push.left <= 1e-10) s.push = null;
+    }
+    s.x += s.v * (dt - active);
+  },
+  calc(s) {
+    const { m } = s.p, Q = m * G, F = s.push ? s.push.F : 0;
+    return { m, Q, N: Q, F, net: F, a: F / m };
+  },
+  render(s) {
+    const c = this.calc(s), w = this.size(s), h = w, cy = GROUND - h / 2;
+    const k = 0.9;
+    let out = ground(s.x * SCALE, 0) + block(w, h, `${f(s.p.m, 1)} kg`);
+    out += arrow(450, cy, 450, cy + c.Q * k, 'Q', 'Q', 14, 4);
+    out += arrow(450, cy, 450, cy - c.N * k, 'N', 'N', -14, 4);
+    if (!s.drag) out += arrow(450, cy, 450 + c.F * FSCALE, cy, 'F', `F = ${f(c.F, 0)} N`, 0, -10);
+    out += arrow(450, GROUND - h - 28, 450 + s.v * 22, GROUND - h - 28, 'v', `v = ${f(s.v, 2)} m/s`, 0, -8);
+    out += arrow(450, GROUND - h - 62, 450 + c.a * 22, GROUND - h - 62, 'a', `a = ${f(c.a, 2)} m/s²`, 0, -8);
+    if (s.drag) {
+      const F = s.drag.F;
+      out += dragArrow(F, cy, `F = ${f(F, 0)} N`);
+      out += text(450, 90, `Bez tarcia: Δv = F·Δt/m = ${f(F * s.p.dt / s.p.m, 2)} m/s`, 14, 'middle', 700);
+    } else out += text(880, 30, 'Chwyć klocek i naciągnij wektor siły, puść aby popchnąć', 12, 'end', 600);
+    out += text(20, 30, `x = ${f(s.x, 2)} m`, 15, 'start', 700);
+    out += text(20, 52, `t = ${f(s.t, 1)} s`, 13);
+    out += massCenter(450, cy, !!s.drag);
+    return out;
+  },
+  readout(s) {
+    const c = this.calc(s);
+    const status = c.F !== 0 ? ['Przygotowanie - popchnięcie (II zasada): ΣF ≠ 0, prędkość się zmienia', 'warn']
+      : s.v === 0 ? ['I zasada: ΣF = 0, klocek pozostaje w spoczynku', 'ok']
+        : ['I zasada: ΣF = 0 ⇒ v = const, ruch jednostajny bez tarcia', 'ok'];
+    return {
+      eq: `Q = N = ${num(c.Q, 1, 'N')}<br>ΣF = F = ${num(c.net, 1, 'N')}<br>a = ΣF/m = ${num(c.a, 2, 'm/s²')}<br>v = ${num(s.v, 2, 'm/s')}`,
+      status
+    };
+  }
+};
+
+/* ---------- Symulacja 2: F = m·a ---------- */
+const sim2 = {
+  example: 'Klocek - siła i przyspieszenie',
+  label: 'II zasada dynamiki', title: 'F = m·a: siła nadaje przyspieszenie',
+  sub: 'Przyspieszenie ∝ siła / masa',
+  law: '<b>Przyspieszenie ciała jest wprost proporcjonalne do siły wypadkowej i odwrotnie proporcjonalne do jego masy: a = ΣF / m.</b><br><br>Spróbuj: podwój masę przy tej samej sile, a przyspieszenie spadnie o połowę. Dodaj tarcie i sprawdź, kiedy siła w ogóle poruszy klocek.',
+  controls: [
+    { id: 'm', label: 'Masa m', min: 0.5, max: 10, step: 0.5, value: 4, unit: 'kg', dec: 1 },
+    { id: 'F', label: 'Siła zewnętrzna F', min: -50, max: 50, step: 1, value: 20, unit: 'N', dec: 0 },
+    { id: 'mu', label: 'Współczynnik tarcia μ', min: 0, max: 0.6, step: 0.01, value: 0.1, unit: '', dec: 2 }
+  ],
+  buttons: [],
+  formulas: 'a = ΣF / m<br>ΣF = F + T (siły ze znakiem)<br>|T| = μ·m·g podczas poślizgu<br>v = v₀ + a·t (dla stałego a)',
+  plots: kinematicPlots,
+  span: () => 10,
+  sample(s) { return { x: s.x, v: s.v, a: s.a }; },
+  reset(s) { s.x = 0; s.v = 0; s.a = 0; s.net = 0; s.T = 0; s.drag = null; },
+  size(s) { return 56 + s.p.m * 4; },
+  hit(s, p) { const w = this.size(s); return Math.abs(p.x - 450) <= w / 2 + 8 && p.y >= GROUND - w - 8 && p.y <= GROUND; },
+  dragMove(s, p) { s.drag = true; setParam('F', dragForce(p.x, this.size(s))); },
+  dragEnd(s) { s.drag = null; return state.mode === 'idle' && s.p.F !== 0; },
+  step(s, dt) {
+    moveHorizontal(s, s.p.F, dt);
+    Object.assign(s, horizontalForces(s, s.p.F));
+  },
+  render(s) {
+    Object.assign(s, horizontalForces(s, s.p.F));
+    const { m, F, mu } = s.p, w = 56 + m * 4, h = 56 + m * 4, cy = GROUND - h / 2;
+    let out = ground(s.x * SCALE, mu) + block(w, h, `${f(m, 1)} kg`);
+    out += arrow(450, cy, 450, cy + m * G * 0.9, 'Q', 'Q', 14, 4);
+    out += arrow(450, cy, 450, cy - m * G * 0.9, 'N', 'N', -14, 4);
+    out += arrow(450, cy, 450 + F * FSCALE, cy, 'F', `F = ${f(F, 0)} N`, 0, -10, !!s.drag);
+    if (!s.drag) out += text(880, 30, 'Chwyć klocek i naciągnij wektor siły F', 12, 'end', 600);
+    out += arrow(450, cy, 450 + s.T * 4, cy, 'T', `T = ${f(s.T, 1)} N`, 0, 20);
+    out += arrow(450, GROUND - h - 28, 450 + s.v * 22, GROUND - h - 28, 'v', `v = ${f(s.v, 2)} m/s`, 0, -8);
+    out += arrow(450, GROUND - h - 62, 450 + s.a * 22, GROUND - h - 62, 'a', `a = ${f(s.a, 2)} m/s²`, 0, -8);
+    out += text(20, 30, `x = ${f(s.x, 2)} m`, 15, 'start', 700);
+    out += text(20, 52, `t = ${f(s.t, 1)} s`, 13);
+    out += massCenter(450, cy, !!s.drag);
+    return out;
+  },
+  readout(s) {
+    const { m, F, mu } = s.p, Tmax = mu * m * G;
+    const stuck = s.v === 0 && Math.abs(F) <= Tmax && F !== 0;
+    return {
+      eq: `T<sub>max</sub> = μ·m·g = ${num(Tmax, 1, 'N')}<br>ΣF = F + T = ${num(F, 0)} + (${num(s.T, 1)}) = ${num(s.net, 1, 'N')}<br>a = ΣF/m = ${num(s.net, 1)} / ${num(m, 1)} = ${num(s.a, 2, 'm/s²')}<br>v = ${num(s.v, 2, 'm/s')}`,
+      status: stuck ? ['|F| ≤ T_max: tarcie statyczne równoważy siłę, klocek stoi', 'warn']
+        : s.net === 0 ? ['ΣF = 0 ⇒ a = 0', 'ok'] : [`ΣF ≠ 0 ⇒ a = ${f(s.a, 2)} m/s²`, 'ok']
+    };
+  }
+};
+
+/* ---------- Symulacja 3: akcja i reakcja ---------- */
+const sim3 = {
+  example: 'Dwa bloki - akcja i reakcja',
+  resetOnParam: true,
+  label: 'III zasada dynamiki', title: 'Akcja i reakcja: dwa bloki i sprężyna',
+  sub: 'Siły wzajemne F₁₂ = −F₂₁',
+  law: '<b>Jeżeli ciało A działa na ciało B siłą F<sub>AB</sub>, to ciało B działa na A siłą F<sub>BA</sub> = −F<sub>AB</sub> (równa wartość, przeciwny zwrot, różne punkty przyłożenia).</b><br><br>Siły są równe, ale przyspieszenia już nie: a = F/m. Lżejszy blok rozpędza się mocniej, a suma pędów wciąż wynosi 0.<br><br>Model uproszczony: sprężyna przedstawia parę stałych sił działających przez zadany czas Δt.',
+  controls: [
+    { id: 'm1', label: 'Masa bloku 1 (m₁)', min: 0.5, max: 10, step: 0.5, value: 2, unit: 'kg', dec: 1 },
+    { id: 'm2', label: 'Masa bloku 2 (m₂)', min: 0.5, max: 10, step: 0.5, value: 4, unit: 'kg', dec: 1 },
+    { id: 'F', label: 'Siła sprężyny F', min: 5, max: 50, step: 1, value: 20, unit: 'N', dec: 0 },
+    { id: 'T', label: 'Czas oddziaływania Δt', min: 0.1, max: 1.5, step: 0.05, value: 0.5, unit: 's', dec: 2 }
+  ],
+  buttons: [],
+  formulas: 'F₁₂ = −F₂₁<br>a₁ = −F/m₁, a₂ = F/m₂<br>a₁ / a₂ = −m₂ / m₁<br>p₁ + p₂ = 0',
+  plots: [
+    { label: 'Położenie x', unit: 'm', series: [{ k: 'x1', name: 'blok 1 (m₁)', c: COLORS.N }, { k: 'x2', name: 'blok 2 (m₂)', c: COLORS.F }] },
+    { label: 'Prędkość v', unit: 'm/s', series: [{ k: 'v1', name: 'blok 1', c: COLORS.N }, { k: 'v2', name: 'blok 2', c: COLORS.F }] },
+    { label: 'Przyspieszenie a', unit: 'm/s²', series: [{ k: 'a1', name: 'blok 1', c: COLORS.N }, { k: 'a2', name: 'blok 2', c: COLORS.F }] }
+  ],
+  span: () => 5,
+  sample(s) {
+    const { m1, m2, F } = s.p, act = this.active(s);
+    return { x1: s.x1, x2: s.x2, v1: s.v1, v2: s.v2, a1: act ? -F / m1 : 0, a2: act ? F / m2 : 0 };
+  },
+  reset(s) { s.x1 = -0.9; s.x2 = 0.9; s.v1 = 0; s.v2 = 0; s.launched = false; s.t = 0; s.drag = null; },
+  scale(s) { return Math.min(60, 290 / Math.max(Math.abs(s.x1), Math.abs(s.x2))); },
+  hit(s, p) {
+    if (s.launched) return false;
+    const k = this.scale(s);
+    for (const i of [1, 2]) {
+      const cx = 450 + s['x' + i] * k;
+      if (Math.abs(p.x - cx) <= BODY_WIDTH / 2 + 8 && p.y >= 280 - BODY_HEIGHT - 8 && p.y <= 280) { s.pick = i; return true; }
+    }
+    return false;
+  },
+  dragMove(s, p) {
+    const cx = 450 + s['x' + s.pick] * this.scale(s);
+    const distance = Math.abs(p.x - cx) - 36;
+    s.drag = { px: clamp(p.x, 18, VW - 18), cx, F: distance > 0 ? clamp(Math.round(distance / FSCALE), 5, 50) : 0 };
+  },
+  dragEnd(s) {
+    const F = s.drag ? s.drag.F : 0;
+    if (!F) { s.drag = null; return false; }
+    this.reset(s);
+    setParam('F', F);
+    s.launched = true;
+    return true;
+  },
+  step(s, dt) {
+    if (!s.launched) return;
+    const { m1, m2, F, T } = s.p;
+    const active = clamp(T - s.t, 0, dt);
+    s.x1 += s.v1 * dt - F / m1 * active * (dt - active / 2);
+    s.x2 += s.v2 * dt + F / m2 * active * (dt - active / 2);
+    s.v1 -= F / m1 * active; s.v2 += F / m2 * active;
+  },
+  active(s) { return s.launched && s.t < s.p.T; },
+  render(s) {
+    const { m1, m2, F } = s.p, act = this.active(s);
+    const k = this.scale(s);
+    const X = x => 450 + x * k, Y = 280;
+    let out = `<rect x="0" y="${Y}" width="900" height="140" fill="#dcecf7"/><line x1="0" x2="900" y1="${Y}" y2="${Y}" stroke="#7d8da6" stroke-width="2"/>`;
+    const tick = tickStep(50 / k), extent = 450 / k;
+    for (let m = Math.ceil(-extent / tick) * tick; m <= extent; m += tick) out += `<line x1="${X(m)}" x2="${X(m)}" y1="${Y}" y2="${Y + 8}" stroke="#7d8da6"/>`;
+    out += text(14, Y + 38, `lód, brak tarcia · znaczniki co ${f(tick, 0)} m · kamera oddala się wraz z blokami`, 12, 'start', 600);
+
+    const cart = (x, m, label, fill) => {
+      return `<rect class="physics-body" x="${X(x) - BODY_WIDTH / 2}" y="${Y - BODY_HEIGHT}" width="${BODY_WIDTH}" height="${BODY_HEIGHT}" fill="${fill}" stroke="#315fb1" stroke-width="1.5"/>` +
+        text(X(x), Y - BODY_HEIGHT - 8, label, 14, 'middle', 500);
+    };
+    out += cart(s.x1, m1, `${f(m1, 1)} kg`, '#b9cdf3') + cart(s.x2, m2, `${f(m2, 1)} kg`, '#f6cfae');
+
+    const gx1 = X(s.x1) + 36, gx2 = X(s.x2) - 36, sy = Y - 28;
+    if (!s.launched || act) {
+      let pts = `${gx1},${sy}`; const n = 8;
+      for (let i = 0; i < n; i++) pts += ` ${gx1 + (gx2 - gx1) * (i + .5) / n},${sy + (i % 2 ? 9 : -9)}`;
+      out += `<polyline fill="none" stroke="#586b85" stroke-width="2.5" points="${pts} ${gx2},${sy}"/>`;
+    }
+    const cx1 = X(s.x1), cx2 = X(s.x2);
+    const cy1 = Y - BODY_HEIGHT / 2, cy2 = cy1;
+    // Para sił ma zawsze tę samą długość, również blisko brzegów.
+    const forceLength = force => Math.min(force * FSCALE, 200, cx1 - 18, VW - 18 - cx2);
+    const L = forceLength(F);
+    if (s.drag) {
+      const D = s.drag.F;
+      out += arrow(cx1, cy1, cx1 - forceLength(D), cy1, 'F', `F₂₁ = ${f(D, 0)} N`, 0, 20, true);
+      out += arrow(cx2, cy2, cx2 + forceLength(D), cy2, 'F', `F₁₂ = ${f(D, 0)} N`, 0, 20, true);
+    } else if (act) {
+      out += arrow(cx1, cy1, cx1 - L, cy1, 'F', 'F₂₁ (na 1)', 0, 20);
+      out += arrow(cx2, cy2, cx2 + L, cy2, 'F', 'F₁₂ (na 2)', 0, 20);
+      out += arrow(X(s.x1), Y + 62, X(s.x1) - F / m1 * 6, Y + 62, 'a', `a₁ = ${f(-F / m1, 1)}`, 0, 18);
+      out += arrow(X(s.x2), Y + 62, X(s.x2) + F / m2 * 6, Y + 62, 'a', `a₂ = ${f(F / m2, 1)}`, 0, 18);
+    }
+    out += arrow(X(s.x1), 110, X(s.x1) + s.v1 * 14, 110, 'v', `v₁ = ${f(s.v1, 2)} m/s`, 0, -8);
+    out += arrow(X(s.x2), 150, X(s.x2) + s.v2 * 14, 150, 'v', `v₂ = ${f(s.v2, 2)} m/s`, 0, -8);
+    out += text(20, 30, s.launched ? (act ? 'sprężyna działa…' : 'oddziaływanie zakończone, ruch jednostajny') : 'Chwyć blok i odciągnij, aby ustawić siłę sprężyny. Puść, by zwolnić', 14, 'start', 700);
+    out += text(20, 52, `t = ${f(s.t, 2)} s`, 13);
+    out += massCenter(cx1, cy1, !!s.drag) + massCenter(cx2, cy2, !!s.drag);
+    return out;
+  },
+  readout(s) {
+    const { m1, m2, F } = s.p, p1 = m1 * s.v1, p2 = m2 * s.v2, act = this.active(s);
+    return {
+      eq: `F₁₂ = ${num(act ? F : 0, 1, 'N')}, F₂₁ = ${num(act ? -F : 0, 1, 'N')}<br>a₁ = ${num(act ? -F / m1 : 0, 2, 'm/s²')}, a₂ = ${num(act ? F / m2 : 0, 2, 'm/s²')}<br>p₁ = ${num(p1, 2)}, p₂ = ${num(p2, 2, 'kg·m/s')}<br>p₁ + p₂ = ${num(p1 + p2, 2, 'kg·m/s')}`,
+      status: [act ? `|a₁|/|a₂| = m₂/m₁ = ${f(m2 / m1, 2)}` : s.launched ? 'Oddziaływanie zakończone: a₁ = a₂ = 0, pęd jest zachowany' : 'Start lub przeciągnięcie bloku zwalnia sprężynę', 'ok']
+    };
+  }
+};
+
+/* ---------- Symulacja 4: rzut ukośny ---------- */
+const sim4 = {
+  example: 'Rzut ukośny - ruch w polu grawitacyjnym',
+  label: 'II zasada dynamiki', title: 'Rzut ukośny: ciężar nadaje przyspieszenie',
+  sub: 'Zastosowanie II zasady dynamiki',
+  law: '<b>II zasada dynamiki: a = ΣF/m. Po wystrzale działa tylko ciężar Q = m·g, więc aᵧ = −g, aₓ = 0.</b><br><br>Bez oporu powietrza vₓ jest stałe (zgodnie z I zasadą w kierunku poziomym), a vᵧ maleje. Na szczycie vᵧ = 0, ale grawitacja nadal działa. Masa nie zmienia toru lotu.<br><br>Chwyć obiekt i przeciągnij w kierunku wystrzału: kierunek wyznacza kąt, długość - prędkość początkową v₀. Puść, aby wystrzelić. Wektor v₀ opisuje prędkość nadaną przy wystrzale; nie jest siłą działającą w locie.<br><br>Suwaki umożliwiają dokładne ustawienia. Po kontakcie z podłożem obiekt zatrzymuje się bez odbicia. Reset przygotowuje kolejny rzut.',
+  hint: 'Chwyć pomarańczowy obiekt i przeciągnij w prawo lub w górę, aby ustawić v₀ (1–40 m/s) i kąt (0–90°). Puść, aby wystrzelić. Reset pozwala celować ponownie.',
+  resetOnParam: true,
+  controls: [
+    { id: 'v0', label: 'Prędkość początkowa v₀', min: 1, max: 40, step: 0.5, value: 18, unit: 'm/s', dec: 1 },
+    { id: 'angle', label: 'Kąt wystrzału α', min: 0, max: 90, step: 1, value: 45, unit: '°', dec: 0 },
+    { id: 'h0', label: 'Wysokość startowa h₀', min: 0, max: 20, step: 0.5, value: 2, unit: 'm', dec: 1 },
+    { id: 'm', label: 'Masa obiektu m', min: 0.5, max: 10, step: 0.5, value: 2, unit: 'kg', dec: 1 }
+  ],
+  buttons: [],
+  formulas: 'II zasada: a = ΣF/m<br>W locie: ΣFₓ = 0, ΣFᵧ = −m·g<br>aₓ = 0, aᵧ = −g (oś y w górę)<br>vₓ = v₀·cos α, vᵧ = v₀·sin α − g·t<br>x = v₀·cos α·t<br>h = h₀ + v₀·sin α·t − ½g·t²<br>h<sub>max</sub> = h₀ + (v₀·sin α)²/(2g)',
+  plots: [
+    { label: 'Położenie', unit: 'm', series: [{ k: 'x', name: 'x (poziomo)', c: COLORS.N }, { k: 'h', name: 'h (wysokość)', c: COLORS.F }] },
+    { label: 'Prędkość', unit: 'm/s', series: [{ k: 'vx', name: 'vₓ', c: COLORS.N }, { k: 'vy', name: 'vᵧ', c: COLORS.F }] },
+    { label: 'Przyspieszenie', unit: 'm/s²', series: [{ k: 'ax', name: 'aₓ', c: COLORS.N }, { k: 'ay', name: 'aᵧ', c: COLORS.F }] }
+  ],
+  span(s) { return Math.max(1, this.flight(s).duration); },
+  sample(s) { return { x: s.x, h: s.y, vx: s.vx, vy: s.vy, ax: 0, ay: s.landed ? 0 : -G }; },
+  flight(s) {
+    const angle = s.p.angle * Math.PI / 180;
+    const vx = s.p.angle === 90 ? 0 : s.p.v0 * Math.cos(angle), vy = s.p.v0 * Math.sin(angle);
+    const duration = (vy + Math.sqrt(vy * vy + 2 * G * s.p.h0)) / G;
+    return { vx, vy, duration, range: vx * duration, peak: s.p.h0 + vy * vy / (2 * G) };
+  },
+  reset(s) {
+    const flight = this.flight(s);
+    s.t = 0; s.x = 0; s.y = s.p.h0; s.vx = flight.vx; s.vy = flight.vy; s.landed = false; s.drag = null;
+  },
+  scale(s) {
+    if (s.drag) return s.drag.k;
+    const flight = this.flight(s);
+    // Zostaw nad punktem startu miejsce na cały wektor v₀.
+    return Math.min(55, 650 / Math.max(flight.range, 1), 205 / Math.max(flight.peak, 1), 60 / Math.max(s.p.h0, 1));
+  },
+  hit(s, p) {
+    return s.t === 0 && !s.landed && state.mode !== 'running' && Math.hypot(p.x - 90, p.y - (310 - s.p.h0 * this.scale(s))) <= 24;
+  },
+  dragStart(s, p) {
+    const k = this.scale(s);
+    s.drag = { k, x: 90, y: 310 - s.p.h0 * k, start: p, v0: s.p.v0, angle: s.p.angle, ready: false };
+  },
+  dragMove(s, p) {
+    const d = s.drag;
+    if (!d) return;
+    const dx = Math.max(0, p.x - d.x), dy = Math.max(0, d.y - p.y);
+    d.ready = Math.hypot(p.x - d.start.x, p.y - d.start.y) >= 6 && Math.hypot(dx, dy) >= 6;
+    if (d.ready) {
+      setParam('angle', Math.round(Math.atan2(dy, dx) * 180 / Math.PI));
+      setParam('v0', clamp(Math.round(Math.hypot(dx, dy) / 5 * 2) / 2, 1, 40));
+    } else {
+      setParam('angle', d.angle); setParam('v0', d.v0);
+    }
+    const flight = this.flight(s);
+    s.vx = flight.vx; s.vy = flight.vy;
+  },
+  dragCancel(s) {
+    if (!s.drag) return;
+    setParam('v0', s.drag.v0); setParam('angle', s.drag.angle);
+    this.reset(s);
+  },
+  dragEnd(s) {
+    if (!s.drag?.ready) { this.dragCancel(s); return false; }
+    this.reset(s);
+    return true;
+  },
+  step(s, dt) {
+    const flight = this.flight(s), t = Math.min(s.t + dt, flight.duration);
+    s.x = flight.vx * t;
+    s.y = Math.max(0, s.p.h0 + flight.vy * t - G * t * t / 2);
+    s.vx = flight.vx; s.vy = flight.vy - G * t;
+    if (t >= flight.duration) {
+      s.y = 0; s.vx = 0; s.vy = 0; s.landed = true;
+      setMode('stopped');
+    }
+    return t - s.t;
+  },
+  render(s) {
+    const flight = this.flight(s), base = 310, left = 90;
+    // Jednakowa skala obu osi i stały kadr przez cały lot.
+    const k = this.scale(s);
+    const X = x => left + x * k, Y = y => base - y * k;
+    let out = `<rect x="0" y="320" width="900" height="80" fill="#e3e9f1"/><line x1="0" x2="900" y1="320" y2="320" stroke="#7d8da6" stroke-width="2"/>`;
+    const tick = tickStep(65 / k);
+    for (let x = 0; X(x) <= 840; x += tick) {
+      out += `<line x1="${X(x)}" x2="${X(x)}" y1="80" y2="320" stroke="#d9e3ef" stroke-dasharray="3 6"/>`;
+      out += text(X(x), 342, f(x, tick < 1 ? 1 : 0), 11, 'middle');
+    }
+    for (let y = 0; Y(y) >= 80; y += tick) {
+      out += `<line x1="75" x2="840" y1="${Y(y)}" y2="${Y(y)}" stroke="#d9e3ef" stroke-dasharray="3 6"/>`;
+      out += text(65, Y(y) + 4, f(y, tick < 1 ? 1 : 0), 11, 'end');
+    }
+    out += text(40, 76, 'h [m]', 12) + text(855, 342, 'x [m]', 12, 'middle');
+    const path = until => Array.from({ length: 81 }, (_, i) => {
+      const t = until * i / 80;
+      return `${X(flight.vx * t)},${Y(Math.max(0, s.p.h0 + flight.vy * t - G * t * t / 2))}`;
+    }).join(' ');
+    // Podczas celowania kadr jest nieruchomy; po puszczeniu dopasuje się do całego toru.
+    out += `<defs><clipPath id="flight-preview"><rect x="75" y="80" width="765" height="240"/></clipPath></defs>`;
+    out += `<polyline points="${path(flight.duration)}" clip-path="url(#flight-preview)" fill="none" stroke="#9baec8" stroke-width="2" stroke-dasharray="6 6"/>`;
+    out += `<polyline points="${path(s.t)}" fill="none" stroke="${COLORS.v}" stroke-width="3"/>`;
+    const peakX = X(flight.vx * flight.vy / G), peakY = Y(flight.peak);
+    if (peakX <= 840 && peakY >= 80) {
+      out += `<circle cx="${peakX}" cy="${peakY}" r="4" fill="#7d8da6"/>`;
+      out += text(clamp(peakX, 155, 745), peakY - 16, `h max = ${f(flight.peak, 2)} m`, 12, 'middle', 650);
+    }
+    const x = X(s.x), y = Y(s.y);
+    if (s.p.h0 > 0) out += `<rect x="${left - 15}" y="${Y(s.p.h0) + 10}" width="30" height="${s.p.h0 * k}" rx="3" fill="#c4cfde"/>`;
+    const aiming = s.t === 0 && !s.landed;
+    if (aiming) {
+      out += `<circle cx="${x}" cy="${y}" r="24" fill="#eb8b4e18" stroke="#eb8b4e" stroke-dasharray="3 4"/>`;
+      if (s.drag) {
+        const angle = s.p.angle * Math.PI / 180;
+        out += `<line x1="${x}" y1="${y}" x2="${x + 48}" y2="${y}" stroke="#7d8da6" stroke-dasharray="3 3"/>`;
+        if (angle > 0) out += `<path d="M ${x + 30} ${y} A 30 30 0 0 0 ${x + 30 * Math.cos(angle)} ${y - 30 * Math.sin(angle)}" fill="none" stroke="${COLORS.v}"/>`;
+      }
+    }
+    out += `<circle cx="${x}" cy="${y}" r="10" fill="#eb8b4e" stroke="#a85424" stroke-width="2"/>`;
+    const velocityScale = aiming ? 5 : 6;
+    out += arrow(x, y, x + s.vx * velocityScale, y - s.vy * velocityScale, 'v', `${aiming ? 'v₀' : 'v'} = ${f(Math.hypot(s.vx, s.vy), 1)} m/s`, 0, -12, !!s.drag);
+    const weightLength = s.landed ? Math.min(s.p.m * G * 0.9, VH - 18 - y, y - 18) : s.p.m * G * 0.9;
+    out += arrow(x, y, x, y + weightLength, 'Q', 'Q', 16, 0);
+    if (s.landed) out += arrow(x, y, x, y - weightLength, 'N', 'N', -16, 0);
+    else out += arrow(x - 18, y, x - 18, y + 58, 'a', 'g', -16, 0);
+    out += massCenter(x, y, !!s.drag);
+    out += text(20, 28, `t = ${f(s.t, 2)} s · x = ${f(s.x, 2)} m · h = ${f(s.y, 2)} m`, 14, 'start', 700);
+    out += text(880, 28, `α = ${f(s.p.angle, 0)}° · v₀ = ${f(s.p.v0, 1)} m/s`, 13, 'end');
+    out += text(20, 378, 'Linia przerywana: przewidywany tor · zielona: przebyty tor · bez oporu powietrza', 12);
+    return out;
+  },
+  readout(s) {
+    const flight = this.flight(s);
+    return {
+      eq: `vₓ = ${num(s.vx, 2, 'm/s')}, vᵧ = ${num(s.vy, 2, 'm/s')}<br>h = ${num(s.y, 2, 'm')}, h<sub>max</sub> = ${num(flight.peak, 2, 'm')}<br>Zasięg = ${num(flight.range, 2, 'm')}<br>Czas lotu = ${num(flight.duration, 2, 's')}<br>Q = ${num(s.p.m * G, 1, 'N')}, aᵧ = ${num(s.landed ? 0 : -G, 2, 'm/s²')}`,
+      status: [s.drag ? `Celowanie: α = ${f(s.p.angle, 0)}°, v₀ = ${f(s.p.v0, 1)} m/s - puść, aby wystrzelić` : s.landed ? 'Koniec lotu: N = Q, ΣF = 0. Reset pozwala celować ponownie.' : state.mode === 'idle' ? 'Przeciągnij obiekt i puść albo ustaw suwaki i naciśnij Start' : Math.abs(s.vy) < 0.1 ? 'Szczyt toru: vᵧ ≈ 0, przyspieszenie nadal wynosi g w dół' : s.vy > 0 ? 'Wznoszenie: vᵧ maleje, vₓ pozostaje stałe' : 'Opadanie: rośnie prędkość pionowa w dół', 'ok']
+    };
+  }
+};
+
+/* ---------- III zasada: rodzaje zderzeń ---------- */
+const sim5 = {
+  example: 'Zderzenie bloków - siły wzajemne',
+  label: 'III zasada dynamiki', title: 'Zderzenia: równe siły, różne skutki',
+  resetOnParam: true,
+  law: '<b>W każdym rodzaju zderzenia F₁₂ = −F₂₁. Siły działają na różne bloki. Bez zewnętrznych sił poziomych całkowity pęd jest zachowany.</b><br><br><b>Sprężyste (e = 1):</b> energia kinetyczna po zderzeniu jest taka sama jak przed nim.<br><br><b>Częściowo niesprężyste (0 &lt; e &lt; 1):</b> bloki rozdzielają się, ale część energii ruchu przechodzi w ciepło i trwałe odkształcenia.<br><br><b>Doskonale niesprężyste (e = 0):</b> bloki łączą się i mają wspólną prędkość. Ubytek energii kinetycznej jest największy dla danych mas i prędkości początkowych.<br><br>e to stosunek względnej prędkości oddalania do względnej prędkości zbliżania. Kontakt pokazujemy schematycznie, z krótką fazą ściskania i odbicia. Rozmiary prostokątów na ekranie są stałe.',
+  hint: 'Ustaw masy i prędkości, następnie naciśnij Start. Dodatnia prędkość oznacza ruch w prawo. Aby doszło do zderzenia, v₁₀ musi być większe od v₂₀. Zwolnij czas lub użyj pauzy, aby obejrzeć siły podczas kontaktu.',
+  controls: [
+    { id: 'kind', label: 'Rodzaj zderzenia', value: 1, options: [
+      { value: 1, label: 'Sprężyste (e = 1)' },
+      { value: 0.5, label: 'Częściowo niesprężyste (0 < e < 1)' },
+      { value: 0, label: 'Doskonale niesprężyste (e = 0)' }
+    ] },
+    { id: 'e', label: 'Współczynnik restytucji e', min: 0, max: 1, step: 0.05, value: 1, unit: '', dec: 2 },
+    { id: 'm1', label: 'Masa bloku 1 (m₁)', min: 0.5, max: 10, step: 0.5, value: 2, unit: 'kg', dec: 1 },
+    { id: 'm2', label: 'Masa bloku 2 (m₂)', min: 0.5, max: 10, step: 0.5, value: 4, unit: 'kg', dec: 1 },
+    { id: 'u1', label: 'Prędkość początkowa v₁₀', min: -6, max: 6, step: 0.5, value: 3, unit: 'm/s', dec: 1 },
+    { id: 'u2', label: 'Prędkość początkowa v₂₀', min: -6, max: 6, step: 0.5, value: -1, unit: 'm/s', dec: 1 }
+  ],
+  buttons: [],
+  formulas: 'F₁₂ = −F₂₁, Δp₁ = −Δp₂<br>p = m₁·v₁ + m₂·v₂ = const<br>M = m₁ + m₂, V = p/M<br>Po zderzeniu:<br>v₁′ = V − e·m₂/M·(v₁₀−v₂₀)<br>v₂′ = V + e·m₁/M·(v₁₀−v₂₀)<br>ΔE = ½·m₁m₂/M·(1−e²)·(v₁₀−v₂₀)²<br>Dla e = 0: v₁′ = v₂′ = V',
+  paramChanged(s, id) {
+    if (id === 'kind') setParam('e', s.p.kind);
+    if (id === 'e') setParam('kind', s.p.e === 0 ? 0 : s.p.e === 1 ? 1 : 0.5);
+  },
+  plots: [
+    ...sim3.plots.slice(0, 2),
+    { label: 'Siła kontaktu F', unit: 'N', series: [{ k: 'F1', name: 'F₂₁ na blok 1', c: COLORS.N }, { k: 'F2', name: 'F₁₂ na blok 2', c: COLORS.F }] }
+  ],
+  span(s) { return Number.isFinite(s.contact.at) ? Math.max(5, s.contact.at + s.contact.duration + 2) : 5; },
+  sample(s) { return { x1: s.x1, x2: s.x2, v1: s.v1, v2: s.v2, F1: -s.force, F2: s.force }; },
+  reset(s) {
+    const { m1, m2, u1, u2, e } = s.p, relative = u1 - u2;
+    // Środki są początkowo oddalone o 6 m. Zderzaki dotykają się przy 1,2 m.
+    // Dobór sztywności ogranicza ugięcie do 0,5 m, bez przenikania korpusów.
+    const omega = Math.max(Math.PI / 0.8, relative / 0.5);
+    s.contact = { at: relative > 0 ? 4.8 / relative : Infinity, duration: Math.PI / omega * (e === 0 ? 0.5 : 1),
+      omega, restAfter: 1.2 - (1 - e) * Math.max(0, relative) / omega,
+      reducedMass: m1 * m2 / (m1 + m2), cmVelocity: (m1 * u1 + m2 * u2) / (m1 + m2) };
+    s.t = 0; s.drag = null;
+    this.evaluate(s, 0);
+  },
+  evaluate(s, t) {
+    const { m1, m2, u1, u2, e } = s.p, c = s.contact, total = m1 + m2;
+    s.force = 0; s.elasticEnergy = 0; s.dissipatedEnergy = 0;
+    if (t < c.at || !Number.isFinite(c.at)) {
+      s.x1 = -3 + u1 * t; s.x2 = 3 + u2 * t;
+      s.v1 = u1; s.v2 = u2;
+      s.phase = Number.isFinite(c.at) ? 'approach' : 'apart';
+      return;
+    }
+    const elapsed = t - c.at, relative = u1 - u2;
+    const center = (m1 * -3 + m2 * 3) / total + c.cmVelocity * t;
+    const relativeEnergy = c.reducedMass * relative ** 2 / 2, half = Math.PI / (2 * c.omega);
+    let separation, relativeVelocity;
+    if (elapsed < c.duration) {
+      let compression;
+      if (elapsed < half) {
+        const angle = c.omega * elapsed;
+        compression = relative / c.omega * Math.sin(angle);
+        relativeVelocity = relative * Math.cos(angle);
+        s.force = c.reducedMass * c.omega * relative * Math.sin(angle);
+        const transferred = relativeEnergy * Math.sin(angle) ** 2;
+        s.elasticEnergy = e ** 2 * transferred;
+        s.dissipatedEnergy = (1 - e ** 2) * transferred;
+      } else {
+        const angle = c.omega * (elapsed - half);
+        compression = relative / c.omega * (1 - e + e * Math.cos(angle));
+        relativeVelocity = -e * relative * Math.sin(angle);
+        s.force = c.reducedMass * c.omega * e * relative * Math.cos(angle);
+        s.elasticEnergy = relativeEnergy * (e * Math.cos(angle)) ** 2;
+        s.dissipatedEnergy = relativeEnergy * (1 - e ** 2);
+      }
+      separation = 1.2 - compression;
+      s.phase = 'contact';
+    } else {
+      separation = c.restAfter + e * relative * (elapsed - c.duration);
+      relativeVelocity = -e * relative;
+      s.dissipatedEnergy = relativeEnergy * (1 - e ** 2);
+      s.phase = 'after';
+    }
+    s.x1 = center - m2 / total * separation;
+    s.x2 = center + m1 / total * separation;
+    s.v1 = c.cmVelocity + m2 / total * relativeVelocity;
+    s.v2 = c.cmVelocity - m1 / total * relativeVelocity;
+  },
+  step(s, dt) { this.evaluate(s, s.t + dt); },
+  camera(s) {
+    const center = (s.x1 + s.x2) / 2;
+    return { center, k: Math.min(60, 600 / (s.x2 - s.x1 + 4)) };
+  },
+  render(s) {
+    const { m1, m2 } = s.p, { center, k } = this.camera(s), Y = 280;
+    const X = x => 450 + (x - center) * k;
+    // Stałe prostokąty: kamera skaluje odległość między ich powierzchniami.
+    // Wewnętrzne ugięcie w fazie kontaktu nie zmienia rozmiaru rysowanych ciał.
+    const rest = s.phase === 'after' ? s.contact.restAfter : 1.2;
+    const gap = s.phase === 'contact' ? 0 : Math.max(0, s.x2 - s.x1 - rest) * k;
+    const x1 = 450 - (BODY_WIDTH + gap) / 2, x2 = 450 + (BODY_WIDTH + gap) / 2;
+    const cy1 = Y - BODY_HEIGHT / 2, cy2 = cy1;
+    let out = `<rect x="0" y="${Y}" width="900" height="120" fill="#dcecf7"/><line x1="0" x2="900" y1="${Y}" y2="${Y}" stroke="#7d8da6" stroke-width="2"/>`;
+    const tick = tickStep(60 / k);
+    for (let x = Math.ceil((center - 450 / k) / tick) * tick; X(x) <= 900; x += tick) {
+      out += `<line x1="${X(x)}" x2="${X(x)}" y1="${Y}" y2="${Y + 8}" stroke="#7d8da6"/>`;
+    }
+    const cart = (x, m, i, fill) => {
+      return `<rect class="physics-body" x="${x - BODY_WIDTH / 2}" y="${Y - BODY_HEIGHT}" width="${BODY_WIDTH}" height="${BODY_HEIGHT}" fill="${fill}" stroke="#315fb1" stroke-width="1.5"/>` +
+        text(x, Y - BODY_HEIGHT - 14, `${i}: ${f(m, 1)} kg`, 13, 'middle', 500);
+    };
+    out += cart(x1, m1, 1, '#b9cdf3') + cart(x2, m2, 2, '#f6cfae');
+    if (s.phase === 'after' && s.p.e === 0) {
+      out += `<line x1="${x1}" y1="${Y - 8}" x2="${x2}" y2="${Y - 8}" stroke="#586b85" stroke-width="2"/>`;
+      out += text(450, Y + 58, 'Połączone bloki - wspólna prędkość', 13, 'middle', 500);
+    }
+    if (s.phase === 'contact') {
+      const length = Math.min(170, s.force * 2, x1 - 18, VW - 18 - x2);
+      out += arrow(x1, cy1, x1 - length, cy1, 'F', `F₂₁ = ${f(-s.force, 1)} N`, 0, -12);
+      out += arrow(x2, cy2, x2 + length, cy2, 'F', `F₁₂ = ${f(s.force, 1)} N`, 0, -12);
+      out += arrow(x1, 342, x1 - s.force / m1 * 5, 342, 'a', `a₁ = ${f(-s.force / m1, 1)} m/s²`, 0, -10);
+      out += arrow(x2, 374, x2 + s.force / m2 * 5, 374, 'a', `a₂ = ${f(s.force / m2, 1)} m/s²`, 0, -10);
+    }
+    out += arrow(x1, 92, x1 + s.v1 * 22, 92, 'v', `v₁ = ${f(s.v1, 2)} m/s`, 0, -10);
+    out += arrow(x2, 132, x2 + s.v2 * 22, 132, 'v', `v₂ = ${f(s.v2, 2)} m/s`, 0, -10);
+    const phase = s.phase === 'contact' ? 'Kontakt: F₁₂ = −F₂₁' : s.phase === 'after' ? 'Po zderzeniu: siły kontaktu znikają' : s.phase === 'apart' ? 'Przy tych prędkościach nie dojdzie do zderzenia' : 'Bloki zbliżają się do kontaktu';
+    out += text(20, 28, state.mode === 'idle' ? 'Ustaw prędkości i naciśnij Start' : phase, 14, 'start', 700);
+    out += text(20, 50, `t = ${f(s.t, 2)} s · x₁ = ${f(s.x1, 2)} m · x₂ = ${f(s.x2, 2)} m`, 12);
+    out += text(20, 308, `Bez tarcia · e = ${f(s.p.e, 2)} · stałe rozmiary bloków · kontakt pokazany schematycznie`, 12);
+    out += massCenter(x1, cy1) + massCenter(x2, cy2);
+    return out;
+  },
+  readout(s) {
+    const { m1, m2, u1, u2 } = s.p;
+    const p0 = m1 * u1 + m2 * u2, p = m1 * s.v1 + m2 * s.v2;
+    const energy = (m1 * s.v1 ** 2 + m2 * s.v2 ** 2) / 2;
+    return {
+      eq: `F₂₁ = ${num(-s.force, 2, 'N')}, F₁₂ = ${num(s.force, 2, 'N')}<br>a₁ = ${num(-s.force / m1, 2, 'm/s²')}, a₂ = ${num(s.force / m2, 2, 'm/s²')}<br>v₁ = ${num(s.v1, 2, 'm/s')}, v₂ = ${num(s.v2, 2, 'm/s')}<br>p początkowy = ${num(p0, 2, 'kg·m/s')}<br>p teraz = ${num(p, 2, 'kg·m/s')}<br>E kin. = ${num(energy, 2, 'J')}, E spr. = ${num(s.elasticEnergy, 2, 'J')}<br>Energia rozproszona = ${num(s.dissipatedEnergy, 2, 'J')}<br>E kin. + E spr. + E rozpr. = ${num(energy + s.elasticEnergy + s.dissipatedEnergy, 2, 'J')}`,
+      status: [s.phase === 'contact' ? 'III zasada: równe wartości sił, przeciwne zwroty, dwa różne bloki' : s.phase === 'after' ? (s.p.e === 0 ? 'Doskonale niesprężyste: bloki połączone, pęd zachowany' : s.p.e === 1 ? 'Sprężyste: pęd i energia kinetyczna zachowane' : 'Częściowo niesprężyste: pęd zachowany, część energii ruchu rozproszona') : s.phase === 'apart' ? 'Brak zderzenia: ustaw v₁₀ > v₂₀' : 'Przed kontaktem siły wzajemne wynoszą 0', s.phase === 'apart' ? 'warn' : 'ok']
+    };
+  }
+};
+
+const sims = [sim1, sim2, sim3, sim4, sim5];
+const lessons = [
+  { label: sim1.label, sub: 'Bezwładność', examples: [0], selected: 0 },
+  { label: sim2.label, sub: 'Siła i przyspieszenie · 2 przykłady', examples: [1, 3], selected: 1 },
+  { label: sim3.label, sub: 'Akcja i reakcja · 2 przykłady', examples: [2, 4], selected: 2 }
+];
+let cur = 0, S = null;
+
+function load(i) {
+  cancelDrag();
+  cur = i;
+  const sim = sims[i];
+  const lessonIndex = lessons.findIndex(lesson => lesson.examples.includes(i));
+  const lesson = lessons[lessonIndex];
+  lesson.selected = i;
+  S = { p: {}, t: 0 };
+  sim.controls.forEach(c => { S.p[c.id] = c.value; });
+  sim.reset(S);
+  setMode('idle');
+  $('bench-label').textContent = sim.label;
+  $('bench-title').textContent = sim.title;
+  svg.setAttribute('aria-label', sim.title);
+  $('law').innerHTML = sim.law;
+  $('formulas').innerHTML = sim.formulas;
+  $('example').innerHTML = lesson.examples.map(index => `<option value="${index}"${index === i ? ' selected' : ''}>${sims[index].example}</option>`).join('');
+  $('example').value = String(i);
+  $('example').disabled = lesson.examples.length === 1;
+  $('example-hint').textContent = sim.hint || 'Chwyć obiekt i przeciągnij, aby ustawić siłę. Parametry możesz też zmieniać suwakami.';
+  document.querySelectorAll('.lesson').forEach((b, j) => {
+    b.classList.toggle('active', j === lessonIndex);
+    b.setAttribute('aria-pressed', j === lessonIndex ? 'true' : 'false');
+  });
+  buildControls(sim);
+  render();
+}
+
+const ctl = {};
+
+function setParam(id, v) {
+  S.p[id] = v;
+  const c = ctl[id];
+  if (c) { c.input.value = v; if (c.output) c.output.textContent = `${f(v, c.def.dec)} ${c.def.unit}`; }
+}
+
+function buildControls(sim) {
+  const box = $('controls');
+  box.innerHTML = '';
+  Object.keys(ctl).forEach(k => delete ctl[k]);
+  sim.controls.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'ctl';
+    d.innerHTML = c.options
+      ? `<label for="c-${c.id}">${c.label}</label><select id="c-${c.id}">${c.options.map(o => `<option value="${o.value}"${o.value === S.p[c.id] ? ' selected' : ''}>${o.label.replaceAll('<', '&lt;')}</option>`).join('')}</select>`
+      : `<label for="c-${c.id}">${c.label}<output>${f(S.p[c.id], c.dec)} ${c.unit}</output></label><input id="c-${c.id}" type="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${S.p[c.id]}">`;
+    ctl[c.id] = { def: c, input: d.querySelector(c.options ? 'select' : 'input'), output: c.options ? null : d.querySelector('output') };
+    ctl[c.id].input.addEventListener(c.options ? 'change' : 'input', e => {
+      const value = +e.target.value;
+      if (sim.resetOnParam) cancelDrag();
+      setParam(c.id, value);
+      sim.paramChanged?.(S, c.id);
+      if (sim.resetOnParam) { sim.reset(S); setMode('idle'); }
+      render();
+    });
+    box.appendChild(d);
+  });
+  const extra = document.createElement('div');
+  extra.className = 'ctl';
+  extra.innerHTML = `<label for="c-speed">Szybkość czasu<output>${f(state.speed, 2)}×</output></label><input id="c-speed" type="range" min="0.25" max="2" step="0.25" value="${state.speed}">`;
+  extra.querySelector('input').addEventListener('input', e => { state.speed = +e.target.value; extra.querySelector('output').textContent = `${f(state.speed, 2)}×`; });
+  box.appendChild(extra);
+
+  const chk = document.createElement('div');
+  chk.className = 'ctl check';
+  chk.innerHTML = `<label><input type="checkbox" ${state.showVectors ? 'checked' : ''}> Pokaż wektory</label>`;
+  chk.querySelector('input').addEventListener('change', e => { state.showVectors = e.target.checked; render(); });
+  box.appendChild(chk);
+
+  if (sim.resetOnParam) {
+    const note = document.createElement('p');
+    note.className = 'control-note';
+    note.textContent = 'Zmiana parametrów przygotowuje nową próbę. Uruchom ją przyciskiem Start' + (sim.hit ? ' lub przeciągnięciem obiektu.' : '.');
+    box.appendChild(note);
+  }
+
+  if (sim.buttons.length) {
+    const b = document.createElement('div');
+    b.className = 'ctl buttons';
+    sim.buttons.forEach(def => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tool' + (def.primary ? ' primary' : '');
+      btn.textContent = def.text;
+      btn.addEventListener('click', () => { def.fn.call(sim, S); setMode('running'); render(); });
+      b.appendChild(btn);
+    });
+    box.appendChild(b);
+  }
+}
+
+function setMode(m) {
+  state.mode = m;
+  if (m === 'idle' && S) S.hist = [];
+  $('btn-run').textContent = m === 'paused' ? 'Wznów' : 'Pauza';
+  $('btn-run').disabled = m !== 'running' && m !== 'paused';
+  $('btn-stop').disabled = m !== 'running' && m !== 'paused';
+  $('btn-start').textContent = m === 'idle' ? '▶ Start' : '▶ Start od nowa';
+}
+
+function record() {
+  const sim = sims[cur];
+  if (cur === 2 && !S.launched) return;
+  const h = S.hist || (S.hist = []);
+  if (h.length && S.t < h[h.length - 1].t) h.length = 0;
+  const last = h[h.length - 1];
+  if (!last || S.t - last.t >= 0.04 || (state.mode !== 'running' && S.t > last.t)) {
+    h.push({ t: S.t, ...sim.sample(S) });
+    if (h.length > 6000) h.shift();
+  }
+}
+
+function niceTicks(lo, hi, n) {
+  const step = tickStep((hi - lo) / n), ticks = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) ticks.push(+v.toFixed(10));
+  return { step, ticks };
+}
+
+function graphView() {
+  const sim = sims[cur], hist = S.hist || [], plots = sim.plots;
+  const L = 82, R = 24, top = 14, gap = 46, ph = (GH - top - 50 - gap * (plots.length - 1)) / plots.length, pw = VW - L - R;
+  const tEnd = hist.length ? hist[hist.length - 1].t : 0;
+  let t1 = Math.max(sim.span(S), tEnd);
+  const tt = tickStep(t1 / 8);
+  t1 = Math.ceil(t1 / tt - 1e-9) * tt;
+  const tx = niceTicks(0, t1, 8), X = t => L + t / t1 * pw;
+  const dec = step => Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+  let out = '';
+  plots.forEach((pl, i) => {
+    const y0 = top + i * (ph + gap);
+    let lo = 0, hi = 0;
+    hist.forEach(p => pl.series.forEach(se => { lo = Math.min(lo, p[se.k]); hi = Math.max(hi, p[se.k]); }));
+    if (hi - lo < 1e-6) { lo = -1; hi = 1; }
+    const pad = (hi - lo) * 0.1;
+    lo -= pad * 0.6; hi += pad * 2.2;
+    const yt = niceTicks(lo, hi, 4), Y = v => y0 + ph - (v - lo) / (hi - lo) * ph;
+    out += `<rect x="${L}" y="${y0}" width="${pw}" height="${ph}" fill="#fff" stroke="#d9e3ef"/>`;
+    yt.ticks.forEach(v => {
+      out += `<line x1="${L}" x2="${L + pw}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 0 ? '#7d8da6' : '#e6edf6'}" stroke-width="${v === 0 ? 1.5 : 1}"/>` +
+        text(L - 8, Y(v) + 4, f(v, dec(yt.step)), 11, 'end');
+    });
+    tx.ticks.forEach(t => {
+      out += `<line x1="${X(t)}" x2="${X(t)}" y1="${y0}" y2="${y0 + ph}" stroke="#e6edf6"/>` +
+        text(X(t), y0 + ph + 16, f(t, dec(tx.step)), 11, 'middle');
+    });
+    out += text(L + pw, y0 + ph + 32, 't [s]', 12, 'end', 650);
+    out += `<text transform="translate(18 ${y0 + ph / 2}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="650">${pl.label} [${pl.unit}]</text>`;
+    let lx = L + 10;
+    pl.series.forEach(se => {
+      out += `<line x1="${lx}" x2="${lx + 20}" y1="${y0 + 14}" y2="${y0 + 14}" stroke="${se.c}" stroke-width="3"/>` + text(lx + 26, y0 + 18, se.name, 12, 'start', 700);
+      lx += 40 + se.name.length * 7;
+    });
+    pl.series.forEach(se => {
+      if (hist.length < 2) return;
+      const pts = hist.map(p => `${X(p.t).toFixed(1)},${Y(p[se.k]).toFixed(1)}`).join(' ');
+      const e = hist[hist.length - 1];
+      out += `<polyline points="${pts}" fill="none" stroke="${se.c}" stroke-width="2.5" stroke-linejoin="round"/>` +
+        `<circle cx="${X(e.t)}" cy="${Y(e[se.k])}" r="4" fill="${se.c}"/>`;
+    });
+    if (!hist.length && i === 0) out += text(L + pw / 2, y0 + ph / 2, 'Uruchom symulację (Start lub przeciągnięcie obiektu), aby zobaczyć wykresy', 14, 'middle', 600);
+  });
+  return out;
+}
+
+function setView(v) {
+  state.view = v;
+  svg.setAttribute('viewBox', v === 'graph' ? `0 0 ${VW} ${GH}` : `0 0 ${VW} ${VH}`);
+  $('view-sim').classList.toggle('active', v === 'sim');
+  $('view-graph').classList.toggle('active', v === 'graph');
+  $('view-sim').setAttribute('aria-pressed', v === 'sim');
+  $('view-graph').setAttribute('aria-pressed', v === 'graph');
+  cancelDrag();
+  svg.style.cursor = '';
+  render();
+}
+
+function render() {
+  const sim = sims[cur];
+  scene.innerHTML = state.view === 'graph' ? graphView() : sim.render(S);
+  const r = sim.readout(S);
+  $('live').innerHTML = r.eq;
+  $('status').textContent = r.status[0];
+  $('status').className = 'status ' + r.status[1];
+}
+
+$('lessons').innerHTML = lessons.map((s, i) =>
+  `<button class="lesson" type="button" data-i="${i}"><span class="lesson-num">${i + 1}</span><span><div class="lesson-name">${s.label}</div><div class="lesson-sub">${s.sub}</div></span></button>`).join('');
+$('lessons').addEventListener('click', e => { const b = e.target.closest('.lesson'); if (b) load(lessons[+b.dataset.i].selected); });
+$('example').addEventListener('change', e => load(+e.target.value));
+$('view-sim').addEventListener('click', () => setView('sim'));
+$('view-graph').addEventListener('click', () => setView('graph'));
+$('btn-start').addEventListener('click', () => {
+  cancelDrag();
+  sims[cur].reset(S); S.t = 0; S.hist = [];
+  if (cur === 2) S.launched = true;
+  setMode('running'); render();
+});
+$('btn-run').addEventListener('click', () => setMode(state.mode === 'running' ? 'paused' : 'running'));
+$('btn-stop').addEventListener('click', () => { cancelDrag(); setMode('stopped'); render(); });
+$('btn-reset').addEventListener('click', () => { cancelDrag(); S.t = 0; sims[cur].reset(S); setMode('idle'); render(); });
+
+/* przeciąganie wektora siły lub prędkości: mysz i dotyk (Pointer Events) */
+let dragging = false;
+let pointerId = null;
+function cancelDrag() {
+  dragging = false;
+  if (S) { sims[cur].dragCancel?.(S); S.drag = null; }
+  if (pointerId !== null && svg.hasPointerCapture(pointerId)) svg.releasePointerCapture(pointerId);
+  pointerId = null;
+  svg.style.cursor = '';
+}
+function svgPoint(e) {
+  const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+  return { x: p.x, y: p.y };
+}
+svg.addEventListener('pointerdown', e => {
+  const sim = sims[cur];
+  if (dragging || state.view === 'graph' || e.button !== 0 || !sim.hit?.(S, svgPoint(e))) return;
+  dragging = true;
+  pointerId = e.pointerId;
+  svg.setPointerCapture(e.pointerId);
+  e.preventDefault();
+  svg.style.cursor = 'grabbing';
+  if (sim.dragStart) sim.dragStart(S, svgPoint(e));
+  else sim.dragMove(S, svgPoint(e));
+  render();
+});
+svg.addEventListener('pointermove', e => {
+  const sim = sims[cur];
+  if (dragging && e.pointerId === pointerId) { sim.dragMove(S, svgPoint(e)); render(); }
+  else if (!dragging) svg.style.cursor = state.view === 'sim' && sim.hit?.(S, svgPoint(e)) ? 'grab' : '';
+});
+const endDrag = e => {
+  if (!dragging || e.pointerId !== pointerId) return;
+  // Uwzględnij końcową pozycję także wtedy, gdy ostatni pointermove nie dotarł.
+  if (sims[cur].dragStart) sims[cur].dragMove(S, svgPoint(e));
+  dragging = false;
+  const go = sims[cur].dragEnd(S);
+  cancelDrag();
+  if (go) setMode('running');
+  render();
+};
+svg.addEventListener('pointerup', endDrag);
+svg.addEventListener('pointercancel', e => { if (e.pointerId === pointerId) { cancelDrag(); render(); } });
+svg.addEventListener('lostpointercapture', e => { if (dragging && e.pointerId === pointerId) { cancelDrag(); render(); } });
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000) * state.speed;
+  last = now;
+  if (state.mode === 'running' && !dragging && !document.hidden) {
+    const n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const advanced = sims[cur].step(S, h);
+      if (cur !== 2 || S.launched) S.t += advanced ?? h;
+      if (state.mode !== 'running') break;
+    }
+    record();
+    render();
+  }
+  requestAnimationFrame(frame);
+}
+
+load(0);
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

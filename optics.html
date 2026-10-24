@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Optyka · PhysicsLab</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="brand-mark">⚛</div>
+    <a class="brand" href="./">Physics<span>Lab</span></a>
+    <div class="offline">działa offline</div>
+  </div>
+</header>
+
+<main>
+  <section class="intro">
+    <div class="eyebrow">Optyka geometryczna</div>
+    <h1>Optyka: odbicie, załamanie, soczewki</h1>
+    <p class="muted">Wybierz zjawisko, przeciągaj źródło światła, przedmiot lub ogniska i obserwuj bieg promieni oraz wzory z aktualnymi wartościami.</p>
+  </section>
+
+  <div class="lab">
+    <aside class="card lessons">
+      <div class="section-top"><h2>Zjawiska</h2><span class="count-badge">4 symulacje</span></div>
+      <div class="lesson-list" id="lessons"></div>
+      <div class="lesson-info" id="law"></div>
+      <div class="legend" id="legend"></div>
+    </aside>
+
+    <section class="card workbench">
+      <div class="bench-top">
+        <div>
+          <div class="bench-label" id="bench-label"></div>
+          <div class="bench-title" id="bench-title"></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <svg id="svg" viewBox="0 0 900 400" role="img" aria-label="Symulacja"></svg>
+      </div>
+
+      <div class="controls groups" id="controls"></div>
+
+      <div class="formulas">
+        <div><h3>Wzory</h3><div class="eq" id="formulas"></div></div>
+        <div><h3>Wartości na żywo</h3><div class="eq" id="live"></div><div class="status" id="status"></div></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>Optyka geometryczna w przybliżeniu przyosiowym. Przeciągaj elementy na scenie lub zmieniaj parametry. Kulki pokazują kierunek biegu światła i można je wyłączyć.</footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+
+const COL = { inc: '#eb8b4e', out: '#2a9d8f', virt: '#7a5cc4', obj: '#315fb1', img: '#c0392b', focus: '#d6a100', norm: '#7d8da6' };
+const VW = 900, VH = 400;
+
+const svg = document.getElementById('svg');
+const $ = id => document.getElementById(id);
+const sign = x => (x > 0) - (x < 0);
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const deg = r => r * 180 / Math.PI;
+const rad = d => d * Math.PI / 180;
+const f = (x, d = 1) => { const s = (Math.abs(x) < 0.5 * Math.pow(10, -d) ? 0 : x).toFixed(d); return s.replace('.', ','); };
+const num = (x, d = 1, u = '') => `<span class="num">${f(x, d)}${u ? '&nbsp;' + u : ''}</span>`;
+
+svg.innerHTML = `<defs>${['obj', 'img'].map(k =>
+  `<marker id="m-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0 1L10 5L0 9z" fill="${COL[k]}"/></marker>`).join('')}</defs><g id="scene"></g>`;
+const scene = svg.querySelector('#scene');
+
+const state = { showAux: true, anim: true };
+
+/* ---------- pomocnicze rysowanie ---------- */
+function ln(x1, y1, x2, y2, c, w = 2.5, dash = '', op = 1) {
+  return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${c}" stroke-width="${w}" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''}${op < 1 ? ` opacity="${op}"` : ''}/>`;
+}
+
+function chev(x1, y1, x2, y2, c, at = .55) {
+  const a = Math.atan2(y2 - y1, x2 - x1), x = x1 + (x2 - x1) * at, y = y1 + (y2 - y1) * at, s = 7;
+  const p = (da, l) => `${(x + l * Math.cos(a + da)).toFixed(1)},${(y + l * Math.sin(a + da)).toFixed(1)}`;
+  return `<polygon points="${p(0, s)} ${p(2.5, s)} ${p(-2.5, s)}" fill="${c}"/>`;
+}
+
+function ray(x1, y1, x2, y2, c, w = 3, op = 1) {
+  const long = Math.hypot(x2 - x1, y2 - y1) > 40;
+  return `<g${op < 1 ? ` opacity="${op}"` : ''}>${ln(x1, y1, x2, y2, c, w)}${long ? chev(x1, y1, x2, y2, c) : ''}</g>`;
+}
+
+function arrowLine(x1, y1, x2, y2, key, dash = '') {
+  if (Math.hypot(x2 - x1, y2 - y1) < 3) return '';
+  return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${COL[key]}" stroke-width="3.5"${dash ? ` stroke-dasharray="${dash}"` : ''} marker-end="url(#m-${key})"/>`;
+}
+
+function text(x, y, s, size = 13, anchor = 'start', weight = 500, color = '') {
+  const st = color ? ` style="fill:${color};paint-order:stroke;stroke:#f9fbfe;stroke-width:4px"` : '';
+  return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${size}" text-anchor="${anchor}" font-weight="${weight}"${st}>${s}</text>`;
+}
+
+function arc(cx, cy, r, a1, a2, c, label) {
+  let d = a2 - a1;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d <= -Math.PI) d += 2 * Math.PI;
+  if (Math.abs(d) < 0.02) return '';
+  const P = a => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  const [x1, y1] = P(a1), [x2, y2] = P(a2), am = a1 + d / 2;
+  return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 0 ${d > 0 ? 1 : 0} ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${c}" stroke-width="2.5"/>` +
+    text(cx + (r + 22) * Math.cos(am), cy + (r + 22) * Math.sin(am) + 4, label, 13, 'middle', 700, c);
+}
+
+function photons(rays, t) {
+  if (!state.anim) return '';
+  let out = '';
+  for (const r of rays) {
+    const segs = [];
+    let L = 0;
+    for (let i = 1; i < r.pts.length; i++) {
+      const [ax, ay] = r.pts[i - 1], [bx, by] = r.pts[i], l = Math.hypot(bx - ax, by - ay);
+      segs.push({ ax, ay, bx, by, l, s: L }); L += l;
+    }
+    const gap = 90, sp = (r.speed || 1) * 130;
+    for (let d = (t * sp) % gap; d <= L; d += gap) {
+      const sg = segs.find(q => d >= q.s && d <= q.s + q.l);
+      if (!sg || sg.l === 0) continue;
+      const u = (d - sg.s) / sg.l;
+      out += `<circle cx="${(sg.ax + (sg.bx - sg.ax) * u).toFixed(1)}" cy="${(sg.ay + (sg.by - sg.ay) * u).toFixed(1)}" r="3.2" fill="${COL.focus}"/>`;
+    }
+  }
+  return out;
+}
+
+function lightSource(x, y) {
+  let s = '';
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4;
+    s += ln(x + 18 * Math.cos(a), y + 18 * Math.sin(a), x + 25 * Math.cos(a), y + 25 * Math.sin(a), COL.focus, 2);
+  }
+  return s + `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="13" fill="#ffe08a" stroke="${COL.focus}" stroke-width="2.5"/>`;
+}
+
+/* ---------- Symulacja 1: odbicie ---------- */
+const O1 = { x: 450, y: 255 };
+const sim1 = {
+  label: 'Odbicie światła', title: 'Prawo odbicia: kąt padania równa się kątowi odbicia',
+  sub: 'Zwierciadło płaskie',
+  law: '<b>Kąt odbicia jest równy kątowi padania (β = α). Promień padający, promień odbity i normalna leżą w jednej płaszczyźnie.</b><br><br>Chwyć źródło światła i przeciągnij je. Przechyl zwierciadło suwakiem: promień odbity obróci się dwa razy bardziej niż zwierciadło.',
+  legend: [[COL.inc, 'promień padający'], [COL.out, 'promień odbity'], [COL.virt, 'przedłużenie pozorne'], [COL.norm, 'normalna'], [COL.focus, 'źródło światła']],
+  controls: [
+    { id: 'psi', label: 'Kąt źródła względem pionu', min: -80, max: 80, step: 1, value: 35, unit: '°', dec: 0 },
+    { id: 'phi', label: 'Przechylenie zwierciadła φ', min: -30, max: 30, step: 1, value: 0, unit: '°', dec: 0 }
+  ],
+  buttons: [],
+  formulas: 'α = β<br>r = d − 2(d·n)·n<br>Obrót zwierciadła o φ obraca promień odbity o 2φ<br>Obraz pozorny leży tak samo daleko za zwierciadłem',
+  init() {},
+  geo(s) {
+    const psi = rad(s.p.psi), phi = rad(s.p.phi), R = 210;
+    const d = { x: Math.sin(psi), y: -Math.cos(psi) }, n = { x: Math.sin(phi), y: -Math.cos(phi) };
+    const dn = d.x * n.x + d.y * n.y, ok = dn > 0.03;
+    return { phi, R, d, n, dn, ok, S: { x: O1.x + R * d.x, y: O1.y + R * d.y },
+      r: ok ? { x: 2 * dn * n.x - d.x, y: 2 * dn * n.y - d.y } : null, alpha: deg(Math.acos(clamp(dn, -1, 1))) };
+  },
+  hit(s, p) { const g = this.geo(s); return Math.hypot(p.x - g.S.x, p.y - g.S.y) <= 28; },
+  dragMove(s, p) { setParam('psi', Math.round(clamp(deg(Math.atan2(p.x - O1.x, O1.y - p.y)), -80, 80))); },
+  render(s) {
+    const g = this.geo(s), { d, n, r, R, S } = g, t = { x: Math.cos(g.phi), y: Math.sin(g.phi) };
+    let out = '';
+    for (let i = -9; i <= 9; i++) {
+      const P = { x: O1.x + i * 25 * t.x, y: O1.y + i * 25 * t.y };
+      out += ln(P.x, P.y, P.x - 14 * n.x - 8 * t.x, P.y - 14 * n.y - 8 * t.y, '#7d8da6', 1.5);
+    }
+    out += ln(O1.x - 240 * t.x, O1.y - 240 * t.y, O1.x + 240 * t.x, O1.y + 240 * t.y, '#586b85', 6);
+    if (state.showAux) {
+      out += ln(O1.x - 90 * n.x, O1.y - 90 * n.y, O1.x + 215 * n.x, O1.y + 215 * n.y, COL.norm, 1.8, '6 5');
+      out += text(O1.x + 222 * n.x, O1.y + 222 * n.y, 'normalna', 12, 'middle', 600, COL.norm);
+    }
+    const E = r ? { x: O1.x + R * r.x, y: O1.y + R * r.y } : null;
+    out += ray(S.x, S.y, O1.x, O1.y, COL.inc);
+    if (E) {
+      out += ray(O1.x, O1.y, E.x, E.y, COL.out);
+      if (state.showAux) {
+        const V = { x: O1.x - R * r.x, y: O1.y - R * r.y };
+        out += ln(O1.x, O1.y, V.x, V.y, COL.virt, 2.5, '7 6');
+        out += `<circle cx="${V.x.toFixed(1)}" cy="${V.y.toFixed(1)}" r="12" fill="none" stroke="${COL.virt}" stroke-width="2.5" stroke-dasharray="4 4"/>`;
+        out += text(O1.x - .55 * R * r.x + 14, clamp(O1.y - .55 * R * r.y, 20, 385), 'obraz pozorny', 12, 'start', 700, COL.virt);
+      }
+      if (state.showAux) {
+        const an = Math.atan2(n.y, n.x);
+        out += arc(O1.x, O1.y, 62, an, Math.atan2(d.y, d.x), COL.inc, `α = ${f(g.alpha, 0)}°`);
+        out += arc(O1.x, O1.y, 62, an, Math.atan2(r.y, r.x), COL.out, `β = ${f(g.alpha, 0)}°`);
+      }
+    }
+    out += lightSource(S.x, S.y);
+    out += text(S.x, S.y - 34, 'źródło światła (przeciągnij)', 12, 'middle', 700, COL.focus);
+    out += photons([{ pts: [[S.x, S.y], [O1.x, O1.y]] }].concat(E ? [{ pts: [[O1.x, O1.y], [E.x, E.y]] }] : []), s.t);
+    out += `<circle cx="${O1.x}" cy="${O1.y}" r="5" fill="#586b85"/>`;
+    return out;
+  },
+  readout(s) {
+    const g = this.geo(s);
+    if (!g.ok) return { eq: `α = ${num(g.alpha, 1, '°')}<br>φ = ${num(s.p.phi, 0, '°')}`, status: ['Światło pada na tył zwierciadła, brak odbicia', 'warn'] };
+    return {
+      eq: `α = ${num(g.alpha, 1, '°')}<br>β = α = ${num(g.alpha, 1, '°')}<br>Kąt między promieniami: 2α = ${num(2 * g.alpha, 1, '°')}<br>Obrót promienia odbitego: 2φ = ${num(2 * s.p.phi, 0, '°')}`,
+      status: ['Prawo odbicia spełnione: β = α', 'ok']
+    };
+  }
+};
+
+/* ---------- Symulacja 2: załamanie ---------- */
+const O2 = { x: 450, y: 230 };
+const sim2 = {
+  label: 'Załamanie światła', title: 'Prawo Snelliusa na granicy ośrodków',
+  sub: 'n₁·sin θ₁ = n₂·sin θ₂',
+  law: '<b>Na granicy ośrodków promień zmienia kierunek tak, że n₁·sin θ₁ = n₂·sin θ₂. W ośrodku o większym n światło biegnie wolniej.</b><br><br>Przejdź ze szkła do powietrza i zwiększaj kąt: powyżej kąta granicznego zobaczysz całkowite wewnętrzne odbicie.',
+  legend: [[COL.inc, 'promień padający'], [COL.out, 'promień załamany lub odbity'], [COL.virt, 'kąt graniczny'], [COL.norm, 'normalna'], [COL.focus, 'źródło światła']],
+  controls: [
+    { id: 'th', label: 'Kąt padania θ₁', min: 0, max: 85, step: 1, value: 40, unit: '°', dec: 0 },
+    { id: 'n1', label: 'Współczynnik załamania n₁ (góra)', min: 1, max: 2.5, step: 0.01, value: 1, unit: '', dec: 2 },
+    { id: 'n2', label: 'Współczynnik załamania n₂ (dół)', min: 1, max: 2.5, step: 0.01, value: 1.5, unit: '', dec: 2 }
+  ],
+  presets: [
+    { text: 'Powietrze → woda', n1: 1, n2: 1.33 },
+    { text: 'Powietrze → szkło', n1: 1, n2: 1.5 },
+    { text: 'Woda → powietrze', n1: 1.33, n2: 1 },
+    { text: 'Szkło → powietrze', n1: 1.5, n2: 1 },
+    { text: 'Powietrze → diament', n1: 1, n2: 2.42 }
+  ],
+  formulas: 'n₁·sin θ₁ = n₂·sin θ₂<br>v = c / n<br>sin θ<sub>gr</sub> = n₂ / n₁ (dla n₁ &gt; n₂)<br>n₂ / n₁ = v₁ / v₂',
+  init() {},
+  geo(s) {
+    const t1 = rad(s.p.th), n1 = s.p.n1, n2 = s.p.n2, st = n1 * Math.sin(t1) / n2, tir = st > 1;
+    return { t1, n1, n2, st, tir, t2: tir ? null : Math.asin(st), crit: n1 > n2 ? Math.asin(n2 / n1) : null };
+  },
+  hit(s, p) {
+    const R = 200, t = rad(s.p.th);
+    return Math.hypot(p.x - (O2.x - R * Math.sin(t)), p.y - (O2.y - R * Math.cos(t))) <= 28;
+  },
+  dragMove(s, p) { setParam('th', Math.round(clamp(deg(Math.atan2(O2.x - p.x, O2.y - p.y)), 0, 85))); },
+  render(s) {
+    const g = this.geo(s), R = 200, { t1, t2, n1, n2, tir, crit } = g;
+    let out = `<rect x="0" y="0" width="900" height="${O2.y}" fill="#315fb1" opacity="${(.04 + (n1 - 1) * .1).toFixed(3)}"/>` +
+      `<rect x="0" y="${O2.y}" width="900" height="${VH - O2.y}" fill="#315fb1" opacity="${(.04 + (n2 - 1) * .1).toFixed(3)}"/>` +
+      ln(0, O2.y, 900, O2.y, '#586b85', 3);
+    out += text(16, 28, `n₁ = ${f(n1, 2)}`, 15, 'start', 700) + text(16, VH - 14, `n₂ = ${f(n2, 2)}`, 15, 'start', 700);
+    out += ln(O2.x, 15, O2.x, VH - 5, COL.norm, 1.8, '6 5');
+    const S = { x: O2.x - R * Math.sin(t1), y: O2.y - R * Math.cos(t1) };
+    const Er = { x: O2.x + R * Math.sin(t1), y: O2.y - R * Math.cos(t1) };
+    if (crit && state.showAux) {
+      out += ln(O2.x, O2.y, O2.x - 150 * Math.sin(crit), O2.y - 150 * Math.cos(crit), COL.virt, 2, '3 5');
+      out += text(O2.x - 158 * Math.sin(crit) - 6, O2.y - 158 * Math.cos(crit), `θgr = ${f(deg(crit), 1)}°`, 12, 'end', 700, COL.virt);
+    }
+    out += ray(S.x, S.y, O2.x, O2.y, COL.inc);
+    out += ray(O2.x, O2.y, Er.x, Er.y, COL.out, tir ? 3.5 : 2.5, tir ? 1 : .4);
+    const rays = [{ pts: [[S.x, S.y], [O2.x, O2.y]], speed: 1 / n1 }];
+    if (tir) rays.push({ pts: [[O2.x, O2.y], [Er.x, Er.y]], speed: 1 / n1 });
+    else {
+      const T = { x: O2.x + 165 * Math.sin(t2), y: O2.y + 165 * Math.cos(t2) };
+      out += ray(O2.x, O2.y, T.x, T.y, COL.out);
+      rays.push({ pts: [[O2.x, O2.y], [T.x, T.y]], speed: 1 / n2 });
+      if (state.showAux) out += arc(O2.x, O2.y, 55, Math.PI / 2, Math.atan2(Math.cos(t2), Math.sin(t2)), COL.out, `θ₂ = ${f(deg(t2), 0)}°`);
+    }
+    if (state.showAux) out += arc(O2.x, O2.y, 55, -Math.PI / 2, Math.atan2(-Math.cos(t1), -Math.sin(t1)), COL.inc, `θ₁ = ${f(deg(t1), 0)}°`);
+    out += lightSource(S.x, S.y);
+    out += text(S.x, S.y - 34, 'źródło światła (przeciągnij)', 12, 'middle', 700, COL.focus);
+    if (tir) out += text(O2.x + 20, O2.y + 40, 'całkowite wewnętrzne odbicie', 14, 'start', 700, COL.img);
+    out += photons(rays, s.t);
+    return out;
+  },
+  readout(s) {
+    const g = this.geo(s), { n1, n2 } = g, c = 3.00;
+    let status;
+    if (g.tir) status = ['Całkowite wewnętrzne odbicie: θ₁ większy od θgr', 'warn'];
+    else if (Math.abs(n1 - n2) < 1e-9) status = ['Ten sam ośrodek, promień nie zmienia kierunku', 'ok'];
+    else if (n2 > n1) status = ['Promień łamie się do normalnej (θ₂ mniejszy od θ₁)', 'ok'];
+    else status = ['Promień łamie się od normalnej (θ₂ większy od θ₁)', 'ok'];
+    return {
+      eq: `n₁·sin θ₁ = ${num(n1 * Math.sin(g.t1), 3)}<br>θ₂ = ${g.tir ? 'brak' : num(deg(g.t2), 1, '°')}<br>v₁ = c/n₁ = ${num(c / n1, 2, '·10⁸ m/s')}, v₂ = ${num(c / n2, 2, '·10⁸ m/s')}<br>θgr = ${g.crit ? num(deg(g.crit), 1, '°') : 'brak (n₁ ≤ n₂)'}`,
+      status
+    };
+  }
+};
+
+/* ---------- Symulacje 3 i 4: soczewka cienka i zwierciadło sferyczne ---------- */
+function makeOptic(mir) {
+  const dir = mir ? -1 : 1, OX = mir ? 660 : 450, AX = 210, K = 5, XE = dir > 0 ? 890 : 10, FMIN = mir ? 8 : 5;
+  const word = mir
+    ? { conv: 'Wklęsłe', div: 'Wypukłe', kind: ['wklęsłe', 'wypukłe'] }
+    : { conv: 'Skupiająca', div: 'Rozpraszająca', kind: ['skupiająca', 'rozpraszająca'] };
+  return {
+    label: mir ? 'Zwierciadło sferyczne' : 'Soczewka cienka',
+    title: mir ? 'Zwierciadło wklęsłe i wypukłe: powstawanie obrazu' : 'Soczewka skupiająca i rozpraszająca: powstawanie obrazu',
+    sub: mir ? 'Ogniskowa f = R / 2' : 'Ogniskowa i równanie soczewki',
+    law: s => {
+      const div = s.p.sgn < 0;
+      return mir
+        ? (div
+          ? '<b>Zwierciadło wypukłe rozprasza światło. Ognisko F i środek krzywizny C leżą za zwierciadłem (są pozorne), a obraz jest zawsze pozorny, prosty i pomniejszony.</b><br><br>Przeciągaj przedmiot lub punkty F i C.'
+          : '<b>Zwierciadło wklęsłe skupia światło. Ma ogniskową f = R/2, a obraz spełnia równanie 1/f = 1/x + 1/y z powiększeniem m = −y/x.</b><br><br>Przeciągaj przedmiot lub punkty F i C. Zobacz, kiedy obraz jest rzeczywisty, a kiedy pozorny.')
+        : (div
+          ? '<b>Soczewka rozpraszająca odchyla promienie tak, jakby wychodziły z ogniska po stronie przedmiotu. Obraz jest zawsze pozorny, prosty i pomniejszony.</b><br><br>Przeciągaj przedmiot lub ognisko F.'
+          : '<b>Soczewka skupiająca zbiera promienie równoległe w ognisku. Obraz spełnia równanie 1/f = 1/x + 1/y, a powiększenie wynosi m = −y/x.</b><br><br>Przeciągaj przedmiot lub ognisko F. Gdy przedmiot jest bliżej niż f, obraz jest pozorny, prosty i powiększony (lupa).');
+    },
+    legend: [[COL.inc, 'promień przed ' + (mir ? 'odbiciem' : 'soczewką')], [COL.out, 'promień po ' + (mir ? 'odbiciu' : 'soczewce')], [COL.virt, 'przedłużenie pozorne'], [COL.obj, 'przedmiot'], [COL.img, 'obraz'], [COL.focus, mir ? 'ognisko F i środek C' : 'ogniska F']],
+    controls: [
+      { id: 'x', label: 'Odległość przedmiotu x', min: 5, max: 85, step: 1, value: mir ? 30 : 40, unit: 'cm', dec: 0 },
+      { id: 'f', label: 'Ogniskowa |f|', min: FMIN, max: 30, step: 1, value: mir ? 12 : 15, unit: 'cm', dec: 0 },
+      { id: 'h', label: 'Wysokość przedmiotu h', min: 2, max: 10, step: 1, value: 6, unit: 'cm', dec: 0 }
+    ],
+    toggle: {
+      label: 'Rodzaj',
+      text: s => s.p.sgn > 0 ? word.kind[0] : word.kind[1],
+      flip(s) { s.p.sgn = -s.p.sgn; }
+    },
+    formulas: mir
+      ? '1/f = 1/x + 1/y<br>f = R / 2<br>m = h′/h = −y/x<br>Promień w wierzchołek odbija się symetrycznie względem osi'
+      : '1/f = 1/x + 1/y<br>m = h′/h = −y/x<br>D = 1/f (dioptrie, f w metrach)<br>Trzy promienie: równoległy, przez środek, przez ognisko',
+    init(s) { s.p.sgn = 1; },
+    geo(s) {
+      const fe = s.p.sgn * s.p.f, x = s.p.x, h = s.p.h, inf = Math.abs(x - fe) < 1e-9;
+      const y = inf ? Infinity : fe * x / (x - fe), m = inf ? Infinity : -y / x;
+      const P0 = { x: OX - x * K, y: AX - h * K };
+      return { fe, x, h, inf, y, m, hi: m * h, P0, Fi: { x: OX + dir * fe * K, y: AX }, Fo: { x: OX - dir * fe * K, y: AX } };
+    },
+    markers(g) {
+      return mir
+        ? [{ p: g.Fi, name: 'F', k: 1 }, { p: { x: OX + dir * 2 * g.fe * K, y: AX }, name: 'C', k: 2 }]
+        : [{ p: g.Fi, name: 'F', k: 1 }, { p: g.Fo, name: 'F', k: 1 }];
+    },
+    hit(s, p) {
+      const g = this.geo(s);
+      for (const m of this.markers(g)) if (Math.hypot(p.x - m.p.x, p.y - m.p.y) <= 16) { s.pick = m; return true; }
+      if (Math.abs(p.x - g.P0.x) <= 24 && p.y >= g.P0.y - 16 && p.y <= AX + 16) { s.pick = 'obj'; return true; }
+      return false;
+    },
+    dragMove(s, p) {
+      if (s.pick === 'obj') setParam('x', Math.round(      clamp((OX - p.x) / K, 5, 85)));
+            else if (s.pick) setParam('f', Math.round(clamp(Math.abs(p.x - OX) / K / s.pick.k, FMIN, 30)));
+    },
+    describe(g) {
+      if (g.inf) return 'Przedmiot w ognisku: promienie wychodzą równolegle, obraz w nieskończoności';
+      const mag = Math.abs(g.m);
+      return `Obraz ${g.y > 0 ? 'rzeczywisty' : 'pozorny'}, ${g.m < 0 ? 'odwrócony' : 'prosty'}, ${Math.abs(mag - 1) < 0.02 ? 'tej samej wielkości' : mag > 1 ? 'powiększony' : 'pomniejszony'}`;
+    },
+    render(s) {
+      const g = this.geo(s), { fe, P0, Fi, Fo } = g,       V = { x: OX, y: AX };
+      let out = ln(0, AX, VW, AX, '#9aa8bd', 1.5);
+            for (let j = -13; j <= 13; j++) {
+              const tx = OX + j * 50;
+              if (!j || tx < 20 || tx > VW - 20) continue;
+              out += ln(tx, AX - 4, tx, AX + 4, '#7d8da6', 1.2);
+              if (state.showAux) out += text(tx, AX + 18, `${Math.abs(j) * 10}`, 10, 'middle', 500, '#7d8da6');
+            }
+      if (state.showAux) out += text(VW - 12, AX + 32, 'podziałka osi w cm', 10, 'end', 500, '#7d8da6');
+
+      if (mir) {
+        const H = 115, sag = H * H / (2 * 2 * fe * K), Px = OX - sag, Cx = OX + sag;
+        for (let i = 0; i <= 10; i++) {
+          const t = i / 10, bx = (1 - t) * (1 - t) * Px + 2 * t * (1 - t) * Cx + t * t * Px, by = AX - H + 2 * H * t;
+          out += ln(bx, by, bx + 12, by + 10, '#7d8da6', 1.5);
+        }
+        out += `<path d="M${Px.toFixed(1)} ${AX - H} Q ${Cx.toFixed(1)} ${AX} ${Px.toFixed(1)} ${AX + H}" fill="none" stroke="#586b85" stroke-width="5" stroke-linecap="round"/>`;
+      } else if (fe > 0) {
+        out += `<path d="M450 ${AX - 110} Q ${450 + 28} ${AX} 450 ${AX + 110} Q ${450 - 28} ${AX} 450 ${AX - 110}z" fill="#b9cdf3" fill-opacity=".55" stroke="#315fb1" stroke-width="2.5"/>` +
+          ln(450, AX - 110, 450, AX - 110, '#315fb1', 1);
+      } else {
+        out += `<path d="M436 ${AX - 110} L464 ${AX - 110} Q 453 ${AX} 464 ${AX + 110} L436 ${AX + 110} Q 447 ${AX} 436 ${AX - 110}z" fill="#b9cdf3" fill-opacity=".55" stroke="#315fb1" stroke-width="2.5"/>`;
+      }
+
+      const L1 = { x: OX, y: P0.y }, s1 = sign(fe), D1 = { x: s1 * (Fi.x - L1.x), y: s1 * (Fi.y - L1.y) };
+      const D2 = mir ? { x: -(V.x - P0.x), y: V.y - P0.y } : { x: V.x - P0.x, y: V.y - P0.y };
+      const at = (L, D) => ({ x: XE, y: L.y + D.y * (XE - L.x) / D.x });
+      const E1 = at(L1, D1), E2 = at(V, D2);
+      let L3 = null;
+      if (Math.abs(Fo.x - P0.x) > 1e-6) L3 = { x: OX, y: P0.y + (AX - P0.y) * (OX - P0.x) / (Fo.x - P0.x) };
+
+      const list = [[L1, E1], [V, E2]].concat(L3 ? [[L3, { x: XE, y: L3.y }]] : []);
+      const virtual = !g.inf && g.y < 0;
+      const I = g.inf ? null : { x: OX + dir * g.y * K, y: AX - g.hi * K };
+      const rays = [];
+      for (const [L, E] of list) {
+        out += ray(P0.x, P0.y, L.x, L.y, COL.inc, 2.5);
+        out += ray(L.x, L.y, E.x, E.y, COL.out, 2.5);
+        if (virtual && state.showAux) out += ln(L.x, L.y, I.x, I.y, COL.virt, 2, '6 5');
+        rays.push({ pts: [[P0.x, P0.y], [L.x, L.y], [E.x, E.y]] });
+      }
+
+      for (const m of this.markers(g)) {
+        out += `<circle cx="${m.p.x.toFixed(1)}" cy="${AX}" r="6" fill="${COL.focus}" stroke="#fff" stroke-width="2"/>` + text(m.p.x, AX + 38, m.name, 13, 'middle', 800, COL.focus);
+      }
+      out += arrowLine(P0.x, AX, P0.x, P0.y, 'obj') + text(P0.x, P0.y - 8, 'przedmiot', 12, 'middle', 700, COL.obj);
+      if (I) {
+        out += arrowLine(I.x, AX, I.x, I.y, 'img', virtual ? '6 5' : '');
+        out += text(I.x, I.y + (g.hi >= 0 ? -8 : 58), virtual ? 'obraz pozorny' : 'obraz', 12, 'middle', 700, COL.img);
+      }
+      out += text(20, 30, this.describe(g), 14, 'start', 700);
+      out += text(20, 52, `${fe > 0 ? word.kind[0] : word.kind[1]}, f = ${f(fe, 0)} cm`, 13);
+      out += photons(rays, s.t);
+      return out;
+    },
+    readout(s) {
+      const g = this.geo(s);
+      return {
+        eq: `f = ${num(g.fe, 0, 'cm')}, x = ${num(g.x, 0, 'cm')}<br>y = f·x/(x−f) = ${g.inf ? '∞' : num(g.y, 1, 'cm')}<br>m = −y/x = ${g.inf ? '∞' : num(g.m, 2)}, h′ = m·h = ${g.inf ? '∞' : num(g.hi, 1, 'cm')}<br>${mir ? 'R = 2f = ' + num(2 * g.fe, 0, 'cm') : 'D = 1/f = ' + num(100 / g.fe, 1, 'D')}`,
+        status: [this.describe(g), 'ok']
+      };
+    }
+  };
+}
+
+const sims = [sim1, sim2, makeOptic(false), makeOptic(true)];
+let cur = 0, S = null;
+
+/* ---------- interfejs ---------- */
+const ctl = {};
+
+function setParam(id, v) {
+  S.p[id] = v;
+  const c = ctl[id];
+  if (c) { c.input.value = v; c.output.textContent = `${f(v, c.def.dec)} ${c.def.unit}`; }
+}
+
+function load(i) {
+  cur = i;
+  const sim = sims[i];
+  S = { p: {}, t: 0, pick: null };
+  sim.controls.forEach(c => { S.p[c.id] = c.value; });
+  sim.init(S);
+  $('bench-label').textContent = sim.label;
+  $('bench-title').textContent = sim.title;
+  $('formulas').innerHTML = sim.formulas;
+  $('legend').innerHTML = sim.legend.map(([c, t]) => `<span style="--color:${c}"><i></i>${t}</span>`).join('');
+  document.querySelectorAll('.lesson').forEach((b, j) => b.classList.toggle('active', j === i));
+  buildControls(sim);
+  render();
+}
+
+function buildControls(sim) {
+  const box = $('controls');
+  Object.keys(ctl).forEach(k => delete ctl[k]);
+  box.innerHTML = '<div class="ctl-group"><h3>Parametry</h3><div class="ctl-grid" id="ctl-grid"></div></div>' +
+    '<div class="ctl-group"><h3>Ustawienia</h3><div class="ctl-row" id="ctl-row"></div></div>';
+  const grid = $('ctl-grid'), row = $('ctl-row');
+
+  sim.controls.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'ctl';
+    d.innerHTML = `<label for="c-${c.id}">${c.label}<output>${f(S.p[c.id], c.dec)} ${c.unit}</output></label><input id="c-${c.id}" type="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${S.p[c.id]}">`;
+    ctl[c.id] = { def: c, input: d.querySelector('input'), output: d.querySelector('output') };
+    ctl[c.id].input.addEventListener('input', e => { setParam(c.id, +e.target.value); render(); });
+    grid.appendChild(d);
+  });
+
+  if (sim.toggle) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'switch';
+    b.addEventListener('click', () => { sim.toggle.flip(S); render(); });
+    row.appendChild(b);
+    sim.syncToggle = () => { b.innerHTML = `<span>${sim.toggle.label}:</span> <b>${sim.toggle.text(S)}</b> <i>⇄</i>`; };
+  }
+
+  if (sim.presets) {
+    const l = document.createElement('label');
+    l.className = 'select';
+    l.innerHTML = 'Ośrodki <select id="preset"><option value="">własne</option>' +
+      sim.presets.map((p, i) => `<option value="${i}">${p.text}</option>`).join('') + '</select>';
+    l.querySelector('select').addEventListener('change', e => {
+      const p = sim.presets[e.target.value];
+      if (!p) return;
+      setParam('n1', p.n1); setParam('n2', p.n2); render();
+    });
+    row.appendChild(l);
+  }
+
+  [['anim', 'Pokaż animację'], ['showAux', 'Pokaż linie pomocnicze']].forEach(([key, text]) => {
+    const l = document.createElement('label');
+    l.className = 'check';
+    l.innerHTML = `<input type="checkbox" ${state[key] ? 'checked' : ''}> ${text}`;
+    l.querySelector('input').addEventListener('change', e => { state[key] = e.target.checked; render(); });
+    row.appendChild(l);
+  });
+}
+
+function render() {
+  const sim = sims[cur];
+  const law = typeof sim.law === 'function' ? sim.law(S) : sim.law;
+  if ($('law').innerHTML !== law) $('law').innerHTML = law;
+  if (sim.syncToggle) sim.syncToggle();
+  const sel = $('preset');
+  if (sel) { const i = sim.presets.findIndex(p => p.n1 === S.p.n1 && p.n2 === S.p.n2); sel.value = i < 0 ? '' : String(i); }
+  scene.innerHTML = sim.render(S);
+  const r = sim.readout(S);
+  $('live').innerHTML = r.eq;
+  $('status').textContent = r.status[0];
+  $('status').className = 'status ' + r.status[1];
+}
+
+$('lessons').innerHTML = sims.map((s, i) =>
+  `<button class="lesson" type="button" data-i="${i}"><span class="lesson-num">${i + 1}</span><span><div class="lesson-name">${s.label}</div><div class="lesson-sub">${s.sub}</div></span></button>`).join('');
+$('lessons').addEventListener('click', e => { const b = e.target.closest('.lesson'); if (b) load(+b.dataset.i); });
+
+/* przeciąganie obiektów: mysz i dotyk (Pointer Events) */
+let dragging = false;
+function svgPoint(e) {
+  const r = svg.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * VW / r.width, y: (e.clientY - r.top) * VH / r.height };
+}
+svg.addEventListener('pointerdown', e => {
+  const sim = sims[cur];
+  if (!sim.hit(S, svgPoint(e))) return;
+  dragging = true;
+  svg.setPointerCapture(e.pointerId);
+  e.preventDefault();
+  sim.dragMove(S, svgPoint(e));
+  render();
+});
+svg.addEventListener('pointermove', e => {
+  const sim = sims[cur];
+  if (dragging) { sim.dragMove(S, svgPoint(e)); render(); }
+  else svg.style.cursor = sim.hit(S, svgPoint(e)) ? 'grab' : '';
+});
+const endDrag = () => { dragging = false; };
+svg.addEventListener('pointerup', endDrag);
+svg.addEventListener('pointercancel', endDrag);
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (state.anim) { S.t += dt; render(); }
+  requestAnimationFrame(frame);
+}
+
+load(0);
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
