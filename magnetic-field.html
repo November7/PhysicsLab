@@ -298,6 +298,7 @@
     }
     function removeSelected() {
       if (!selected()) return;
+      cancelGesture();
       conductors = conductors.filter(c => c.id !== selectedId);
       selectedId = conductors.at(-1)?.id ?? null; lastTap = null;
       syncControls(); requestRender(); announce("Usunięto przewodnik.");
@@ -312,8 +313,11 @@
     }
     function resize() {
       const rect = canvas.getBoundingClientRect(), oldWidth = width, oldHeight = height;
-      width = Math.max(1, rect.width); height = Math.max(1, rect.height);
       const ratio = Math.min(window.devicePixelRatio || 1, 3);
+      const nextWidth = Math.max(1, rect.width), nextHeight = Math.max(1, rect.height);
+      if (initialized && width === nextWidth && height === nextHeight &&
+          canvas.width === Math.round(nextWidth * ratio) && canvas.height === Math.round(nextHeight * ratio)) return;
+      width = nextWidth; height = nextHeight;
       canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
       ctx.setTransform(canvas.width / width, 0, 0, canvas.height / height, 0, 0);
       cancelGesture(); lastTap = null;
@@ -369,7 +373,8 @@
       const g = gesture, p = point(event), now = performance.now(); cancelGesture();
       if (g.moved || now - g.time > 500 || p.x < 0 || p.y < 0 || p.x > width || p.y > height) { lastTap = null; return; }
       const c = conductors.find(item => item.id === g.id);
-      if (!c) { addConductor(p.x, p.y); lastTap = null; return; }
+      if (g.id === null) { addConductor(p.x, p.y); lastTap = null; return; }
+      if (!c) { lastTap = null; return; }
       selectedId = c.id;
       if (lastTap && lastTap.id === c.id && now - lastTap.time <= 360 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) <= 24) reverseCurrent();
       else { lastTap = { id: c.id, time: now, ...p }; syncControls(); requestRender(false); }

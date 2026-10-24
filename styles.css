@@ -42,6 +42,19 @@ header { border-bottom: 1px solid var(--line); background: #fff; }
 
 /* layout */
 main { max-width: 1440px; margin: auto; padding: 28px 32px 24px; }
+/* The vendor Markdown reset sets margin: 0; keep page geometry explicit. */
+.index-page { background: #fff; }
+.index-page .page {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding: 28px max(24px, calc((100% - 1376px) / 2));
+}
+@media (prefers-color-scheme: dark) {
+  .index-page, .index-page body { background: #0d1117; }
+}
 .intro { margin-bottom: 24px; }
 .intro p { font-size: 14px; }
 .eyebrow { color: var(--accent); font-size: 11px; letter-spacing: 2px; font-weight: 800; text-transform: uppercase; }
@@ -87,6 +100,7 @@ main { max-width: 1440px; margin: auto; padding: 28px 32px 24px; }
 }
 .stage svg { display: block; width: 100%; height: auto; touch-action: none; user-select: none; }
 .stage text { font-family: inherit; fill: var(--ink); }
+.stage .distance-label { font-variant-numeric: tabular-nums; }
 
 .tool { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; }
 .tool:hover { background: #f2f6fc; }
@@ -177,4 +191,9 @@ footer { font-size: 12px; color: var(--muted); padding: 19px 2px 0; }
   .formulas { grid-template-columns: 1fr; }
   .formulas > div + div { border-left: 0; border-top: 1px solid var(--line); }
   .bench-top { flex-wrap: wrap; }
+}
+@media (max-width: 480px) {
+  .index-page .page { padding: 20px 16px; }
+  .controls, .ctl-grid { grid-template-columns: minmax(0, 1fr); }
+  .ctl label { flex-wrap: wrap; gap: 4px 8px; }
 }

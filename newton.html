@@ -149,6 +149,16 @@ function text(x, y, s, size = 13, anchor = 'start', weight = 500) {
   return `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}" font-weight="${weight}">${s}</text>`;
 }
 
+function distanceMeasure(x1, x2, s) {
+  const y = 188, mid = (x1 + x2) / 2;
+  // Positions are physical centers; the drawn blocks keep a fixed screen size.
+  return `<g class="distance-label" aria-label="Odległość między środkami bloków">
+    <path d="M${x1} ${y - 7}v14 M${x1} ${y}H${x2} M${x2} ${y - 7}v14" fill="none" stroke="#315fb1" stroke-width="2"/>
+    <rect x="${mid - 155}" y="${y - 31}" width="310" height="24" rx="6" fill="#edf3ff"/>
+    ${text(mid, y - 14, `Odległość środków: ${f(Math.abs(s.x2 - s.x1), 2)} m`, 16, 'middle', 700)}
+  </g>`;
+}
+
 function ground(xpx, mu) {
   let s = `<rect x="0" y="${GROUND}" width="900" height="100" fill="${mu === 0 ? '#dcecf7' : '#e3e9f1'}"/>` +
     `<line x1="0" x2="900" y1="${GROUND}" y2="${GROUND}" stroke="#7d8da6" stroke-width="2"/>`;
@@ -394,6 +404,7 @@ const sim3 = {
       out += `<polyline fill="none" stroke="#586b85" stroke-width="2.5" points="${pts} ${gx2},${sy}"/>`;
     }
     const cx1 = X(s.x1), cx2 = X(s.x2);
+    out += distanceMeasure(cx1, cx2, s);
     const cy1 = Y - BODY_HEIGHT / 2, cy2 = cy1;
     // Para sił ma zawsze tę samą długość, również blisko brzegów.
     const forceLength = force => Math.min(force * FSCALE, 200, cx1 - 18, VW - 18 - cx2);
@@ -418,7 +429,7 @@ const sim3 = {
   readout(s) {
     const { m1, m2, F } = s.p, p1 = m1 * s.v1, p2 = m2 * s.v2, act = this.active(s);
     return {
-      eq: `F₁₂ = ${num(act ? F : 0, 1, 'N')}, F₂₁ = ${num(act ? -F : 0, 1, 'N')}<br>a₁ = ${num(act ? -F / m1 : 0, 2, 'm/s²')}, a₂ = ${num(act ? F / m2 : 0, 2, 'm/s²')}<br>p₁ = ${num(p1, 2)}, p₂ = ${num(p2, 2, 'kg·m/s')}<br>p₁ + p₂ = ${num(p1 + p2, 2, 'kg·m/s')}`,
+      eq: `d = |x₂ − x₁| = ${num(Math.abs(s.x2 - s.x1), 2, 'm')}<br>F₁₂ = ${num(act ? F : 0, 1, 'N')}, F₂₁ = ${num(act ? -F : 0, 1, 'N')}<br>a₁ = ${num(act ? -F / m1 : 0, 2, 'm/s²')}, a₂ = ${num(act ? F / m2 : 0, 2, 'm/s²')}<br>p₁ = ${num(p1, 2)}, p₂ = ${num(p2, 2, 'kg·m/s')}<br>p₁ + p₂ = ${num(p1 + p2, 2, 'kg·m/s')}`,
       status: [act ? `|a₁|/|a₂| = m₂/m₁ = ${f(m2 / m1, 2)}` : s.launched ? 'Oddziaływanie zakończone: a₁ = a₂ = 0, pęd jest zachowany' : 'Start lub przeciągnięcie bloku zwalnia sprężynę', 'ok']
     };
   }
@@ -677,6 +688,7 @@ const sim5 = {
         text(x, Y - BODY_HEIGHT - 14, `${i}: ${f(m, 1)} kg`, 13, 'middle', 500);
     };
     out += cart(x1, m1, 1, '#b9cdf3') + cart(x2, m2, 2, '#f6cfae');
+    out += distanceMeasure(x1, x2, s);
     if (s.phase === 'after' && s.p.e === 0) {
       out += `<line x1="${x1}" y1="${Y - 8}" x2="${x2}" y2="${Y - 8}" stroke="#586b85" stroke-width="2"/>`;
       out += text(450, Y + 58, 'Połączone bloki - wspólna prędkość', 13, 'middle', 500);
@@ -702,7 +714,7 @@ const sim5 = {
     const p0 = m1 * u1 + m2 * u2, p = m1 * s.v1 + m2 * s.v2;
     const energy = (m1 * s.v1 ** 2 + m2 * s.v2 ** 2) / 2;
     return {
-      eq: `F₂₁ = ${num(-s.force, 2, 'N')}, F₁₂ = ${num(s.force, 2, 'N')}<br>a₁ = ${num(-s.force / m1, 2, 'm/s²')}, a₂ = ${num(s.force / m2, 2, 'm/s²')}<br>v₁ = ${num(s.v1, 2, 'm/s')}, v₂ = ${num(s.v2, 2, 'm/s')}<br>p początkowy = ${num(p0, 2, 'kg·m/s')}<br>p teraz = ${num(p, 2, 'kg·m/s')}<br>E kin. = ${num(energy, 2, 'J')}, E spr. = ${num(s.elasticEnergy, 2, 'J')}<br>Energia rozproszona = ${num(s.dissipatedEnergy, 2, 'J')}<br>E kin. + E spr. + E rozpr. = ${num(energy + s.elasticEnergy + s.dissipatedEnergy, 2, 'J')}`,
+      eq: `d = |x₂ − x₁| = ${num(Math.abs(s.x2 - s.x1), 2, 'm')}<br>F₂₁ = ${num(-s.force, 2, 'N')}, F₁₂ = ${num(s.force, 2, 'N')}<br>a₁ = ${num(-s.force / m1, 2, 'm/s²')}, a₂ = ${num(s.force / m2, 2, 'm/s²')}<br>v₁ = ${num(s.v1, 2, 'm/s')}, v₂ = ${num(s.v2, 2, 'm/s')}<br>p początkowy = ${num(p0, 2, 'kg·m/s')}<br>p teraz = ${num(p, 2, 'kg·m/s')}<br>E kin. = ${num(energy, 2, 'J')}, E spr. = ${num(s.elasticEnergy, 2, 'J')}<br>Energia rozproszona = ${num(s.dissipatedEnergy, 2, 'J')}<br>E kin. + E spr. + E rozpr. = ${num(energy + s.elasticEnergy + s.dissipatedEnergy, 2, 'J')}`,
       status: [s.phase === 'contact' ? 'III zasada: równe wartości sił, przeciwne zwroty, dwa różne bloki' : s.phase === 'after' ? (s.p.e === 0 ? 'Doskonale niesprężyste: bloki połączone, pęd zachowany' : s.p.e === 1 ? 'Sprężyste: pęd i energia kinetyczna zachowane' : 'Częściowo niesprężyste: pęd zachowany, część energii ruchu rozproszona') : s.phase === 'apart' ? 'Brak zderzenia: ustaw v₁₀ > v₂₀' : 'Przed kontaktem siły wzajemne wynoszą 0', s.phase === 'apart' ? 'warn' : 'ok']
     };
   }

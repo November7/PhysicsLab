@@ -254,7 +254,7 @@ const sim2 = {
       out += text(O2.x - 158 * Math.sin(crit) - 6, O2.y - 158 * Math.cos(crit), `θgr = ${f(deg(crit), 1)}°`, 12, 'end', 700, COL.virt);
     }
     out += ray(S.x, S.y, O2.x, O2.y, COL.inc);
-    out += ray(O2.x, O2.y, Er.x, Er.y, COL.out, tir ? 3.5 : 2.5, tir ? 1 : .4);
+    if (n1 !== n2) out += ray(O2.x, O2.y, Er.x, Er.y, COL.out, tir ? 3.5 : 2.5, tir ? 1 : .4);
     const rays = [{ pts: [[S.x, S.y], [O2.x, O2.y]], speed: 1 / n1 }];
     if (tir) rays.push({ pts: [[O2.x, O2.y], [Er.x, Er.y]], speed: 1 / n1 });
     else {
@@ -275,6 +275,7 @@ const sim2 = {
     let status;
     if (g.tir) status = ['Całkowite wewnętrzne odbicie: θ₁ większy od θgr', 'warn'];
     else if (Math.abs(n1 - n2) < 1e-9) status = ['Ten sam ośrodek, promień nie zmienia kierunku', 'ok'];
+    else if (Math.abs(g.t1) < 1e-9) status = ['Padanie prostopadłe: promień nie zmienia kierunku', 'ok'];
     else if (n2 > n1) status = ['Promień łamie się do normalnej (θ₂ mniejszy od θ₁)', 'ok'];
     else status = ['Promień łamie się od normalnej (θ₂ większy od θ₁)', 'ok'];
     return {
@@ -375,7 +376,8 @@ function makeOptic(mir) {
       const at = (L, D) => ({ x: XE, y: L.y + D.y * (XE - L.x) / D.x });
       const E1 = at(L1, D1), E2 = at(V, D2);
       let L3 = null;
-      if (Math.abs(Fo.x - P0.x) > 1e-6) L3 = { x: OX, y: P0.y + (AX - P0.y) * (OX - P0.x) / (Fo.x - P0.x) };
+      const incidentFocus = mir ? Fi : Fo;
+      if (Math.abs(incidentFocus.x - P0.x) > 1e-6) L3 = { x: OX, y: P0.y + (AX - P0.y) * (OX - P0.x) / (incidentFocus.x - P0.x) };
 
       const list = [[L1, E1], [V, E2]].concat(L3 ? [[L3, { x: XE, y: L3.y }]] : []);
       const virtual = !g.inf && g.y < 0;
@@ -395,6 +397,9 @@ function makeOptic(mir) {
       if (I) {
         out += arrowLine(I.x, AX, I.x, I.y, 'img', virtual ? '6 5' : '');
         out += text(I.x, I.y + (g.hi >= 0 ? -8 : 58), virtual ? 'obraz pozorny' : 'obraz', 12, 'middle', 700, COL.img);
+        if (I.x < 15 || I.x > VW - 15 || I.y < 15 || I.y > VH - 15) {
+          out += text(20, VH - 18, 'Obraz poza kadrem — odległość i wysokość podano poniżej.', 13, 'start', 700, COL.img);
+        }
       }
       out += text(20, 30, this.describe(g), 14, 'start', 700);
       out += text(20, 52, `${fe > 0 ? word.kind[0] : word.kind[1]}, f = ${f(fe, 0)} cm`, 13);
@@ -424,6 +429,7 @@ function setParam(id, v) {
 }
 
 function load(i) {
+  endDrag();
   cur = i;
   const sim = sims[i];
   S = { p: {}, t: 0, pick: null };
@@ -504,15 +510,15 @@ $('lessons').innerHTML = sims.map((s, i) =>
 $('lessons').addEventListener('click', e => { const b = e.target.closest('.lesson'); if (b) load(+b.dataset.i); });
 
 /* przeciąganie obiektów: mysz i dotyk (Pointer Events) */
-let dragging = false;
+let dragPointer = null;
 function svgPoint(e) {
-  const r = svg.getBoundingClientRect();
-  return { x: (e.clientX - r.left) * VW / r.width, y: (e.clientY - r.top) * VH / r.height };
+  return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
 }
 svg.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || dragPointer !== null) return;
   const sim = sims[cur];
   if (!sim.hit(S, svgPoint(e))) return;
-  dragging = true;
+  dragPointer = e.pointerId;
   svg.setPointerCapture(e.pointerId);
   e.preventDefault();
   sim.dragMove(S, svgPoint(e));
@@ -520,12 +526,25 @@ svg.addEventListener('pointerdown', e => {
 });
 svg.addEventListener('pointermove', e => {
   const sim = sims[cur];
-  if (dragging) { sim.dragMove(S, svgPoint(e)); render(); }
-  else svg.style.cursor = sim.hit(S, svgPoint(e)) ? 'grab' : '';
+  if (dragPointer === e.pointerId) { sim.dragMove(S, svgPoint(e)); render(); }
+  else if (dragPointer === null) svg.style.cursor = sim.hit(S, svgPoint(e)) ? 'grab' : '';
 });
-const endDrag = () => { dragging = false; };
-svg.addEventListener('pointerup', endDrag);
+function endDrag(e) {
+  if (e && e.pointerId !== dragPointer) return;
+  const pointer = dragPointer;
+  dragPointer = null;
+  if (S) S.pick = null;
+  if (pointer !== null && svg.hasPointerCapture(pointer)) svg.releasePointerCapture(pointer);
+}
+svg.addEventListener('pointerup', e => {
+  if (e.pointerId !== dragPointer) return;
+  sims[cur].dragMove(S, svgPoint(e));
+  endDrag(e);
+  render();
+});
 svg.addEventListener('pointercancel', endDrag);
+svg.addEventListener('lostpointercapture', endDrag);
+window.addEventListener('blur', () => endDrag());
 
 let last = performance.now();
 function frame(now) {
