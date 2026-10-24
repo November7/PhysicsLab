@@ -50,8 +50,9 @@ function advance(sim, s, duration, dt = 0.037) {
   const end = s.t + duration;
   while (s.t < end - 1e-10) {
     const h = Math.min(dt, end - s.t);
-    s.t += sim.step(s, h) ?? h;
-    if (s.landed) break;
+    const elapsed = sim.step(s, h) ?? h;
+    s.t += elapsed;
+    if (s.landed || elapsed === 0) break;
   }
 }
 
@@ -144,8 +145,8 @@ test('two carts conserve momentum and remain in view after a long run', () => {
   near(s.v1, -150); near(s.v2, 7.5);
   near(s.p.m1 * s.v1 + s.p.m2 * s.v2, 0);
   assert.equal(sim.active(s), false);
-  const k = sim.scale(s);
-  for (const x of [s.x1, s.x2]) assert.ok(450 + x * k >= 160 && 450 + x * k <= 740);
+  const camera = sim.camera(s);
+  for (const x of [camera.x1, camera.x2]) assert.ok(x >= 54 - 1e-8 && x <= 846 + 1e-8);
   boundedVectors(sim.render(s));
   assert.match(sim.readout(s).eq, /a₁ = <span class="num">0,00/);
 });
@@ -194,7 +195,7 @@ test('three laws group projectile and block under the second law', () => {
   assert.equal((lessons.innerHTML.match(/class="lesson"/g) || []).length, 3);
   const chooseLaw = i => lessons.events.click({ target: { closest: () => ({ dataset: { i: String(i) } }) } });
   chooseLaw(1);
-  assert.equal((example.innerHTML.match(/<option/g) || []).length, 2);
+  assert.equal((example.innerHTML.match(/<option/g) || []).length, 3);
   assert.match(example.innerHTML, /Klocek/); assert.match(example.innerHTML, /Rzut ukośny/);
   example.events.change({ target: { value: '3' } });
   assert.equal(elements.get('bench-label').textContent, 'II zasada dynamiki');
@@ -355,8 +356,8 @@ test('equal or separating velocities never collide and carts stay in frame', () 
   for (const [u1, u2] of [[0, 0], [6, 6], [-6, 6], [-6, -5]]) {
     Object.assign(s.p, { u1, u2 }); sim.reset(s); advance(sim, s, 300, 0.1);
     assert.equal(s.phase, 'apart'); near(s.force, 0); near(s.v1, u1); near(s.v2, u2);
-    const { center, k } = sim.camera(s);
-    for (const x of [s.x1, s.x2]) assert.ok(450 + (x - center) * k >= 150 && 450 + (x - center) * k <= 750);
+    const camera = sim.camera(s);
+    for (const x of [camera.x1, camera.x2]) assert.ok(x >= 54 - 1e-8 && x <= 846 + 1e-8);
     boundedVectors(sim.render(s));
     assert.match(sim.readout(s).status[0], /Brak zderzenia/);
   }
@@ -440,9 +441,12 @@ test('distance remains visible and updates with motion at every camera scale', (
     api.load(i); const sim = api.sims[i], s = api.S;
     s.launched = true;
     const check = () => {
-      const value = Math.abs(s.x2 - s.x1).toFixed(2).replace('.', ',');
-      assert.ok(sim.render(s).includes(`Odległość środków: ${value} m`));
-      assert.ok(sim.readout(s).eq.includes(`${value}&nbsp;m`));
+      for (const [label, x] of [['d₁', s.x1], ['d₂', s.x2]]) {
+        const value = Math.abs(x).toFixed(2).replace('.', ',');
+        assert.ok(sim.render(s).includes(`${label} = ${value} m`));
+        assert.ok(sim.readout(s).eq.includes(`${value}&nbsp;m`));
+      }
+      assert.match(sim.render(s), /0 · punkt startowy/);
     };
     check(); const initial = s.x2 - s.x1;
     advance(sim, s, 0.5); check();
@@ -469,7 +473,7 @@ test('both third-law examples retain fixed rectangular bodies at all camera scal
           assert.equal(rectangles.length, 2);
           for (const r of rectangles) {
             assert.equal(r.width, 72); assert.equal(r.height, 52);
-            assert.ok(r.x >= 18 && r.x + r.width <= 882);
+            assert.ok(r.x >= 18 - 1e-8 && r.x + r.width <= 882 + 1e-8);
           }
           const gap = rectangles[1].x - rectangles[0].x - rectangles[0].width;
           assert.ok(gap >= -1e-8, 'rectangles must never overlap');
@@ -502,4 +506,87 @@ test('collision type and restitution slider stay synchronized and reset the expe
   for (let t = 100; t <= 2100; t += 50) api.frame(t);
   assert.ok(!/NaN|Infinity/.test(api.scene.innerHTML));
   near(api.S.v1, api.S.v2);
+});
+
+test('braking has constant deceleration, exact stopping time and no reversal', () => {
+  const { api } = lab(); api.load(5);
+  const sim = api.sims[5], s = api.S;
+  for (const m of [0.5, 2, 10]) for (const mu of [0.01, 0.2, 1]) for (const v0 of [0, 0.5, 8, 20]) {
+    Object.assign(s.p, { m, mu, v0 }); sim.reset(s);
+    const stop = v0 / (mu * 9.81), distance = v0 * stop / 2;
+    if (v0 > 0) {
+      advance(sim, s, stop / 2, 0.5);
+      near(s.v, v0 / 2); near(sim.sample(s).a, -mu * 9.81);
+    }
+    advance(sim, s, stop + 2, 0.37);
+    near(s.v, 0); near(s.x, distance); near(s.t, stop);
+    near(s.T, 0); near(s.a, 0);
+    advance(sim, s, 10); near(s.x, distance); near(s.v, 0);
+    boundedVectors(sim.render(s));
+  }
+});
+
+test('zero friction preserves initial velocity and zero initial velocity stays at rest', () => {
+  const { api } = lab(); api.load(5);
+  const sim = api.sims[5], s = api.S;
+  Object.assign(s.p, { mu: 0, v0: 8 }); sim.reset(s); advance(sim, s, 300);
+  near(s.x, 2400, 1e-7); near(s.v, 8); near(s.a, 0);
+  assert.match(sim.readout(s).status[0], /ruch jednostajny/);
+  s.p.v0 = 0; sim.reset(s); advance(sim, s, 10);
+  near(s.x, 0); near(s.v, 0); near(s.t, 0);
+});
+
+test('braking supports pause, exact automatic stop, plots and parameter reset', () => {
+  const { api, elements } = lab(); api.load(5);
+  elements.get('btn-start').events.click(); api.frame(50);
+  elements.get('btn-run').events.click();
+  const position = api.S.x; api.frame(100); near(api.S.x, position);
+  api.ctl.mu.input.events.input({ target: { value: '1' } });
+  near(api.S.x, 0); near(api.S.v, 8); assert.equal(api.state.mode, 'idle');
+  elements.get('view-graph').events.click(); elements.get('btn-start').events.click();
+  for (let t = 150; t < 2000; t += 50) api.frame(t);
+  assert.equal(api.state.mode, 'stopped'); near(api.S.t, 8 / 9.81);
+  assert.ok(!/NaN|Infinity/.test(api.scene.innerHTML));
+  near(api.S.hist.at(-1).v, 0);
+});
+
+test('spring camera reaches the fast edge at five seconds and the slow edge later', () => {
+  const { api } = lab(); api.load(2);
+  const sim = api.sims[2], s = api.S;
+  s.launched = true;
+  let camera = sim.camera(s), previous = camera;
+  for (let i = 0; i < 10; i++) {
+    advance(sim, s, 0.5); camera = sim.camera(s);
+    assert.ok(camera.x1 < previous.x1); assert.ok(camera.x2 > previous.x2);
+    previous = camera;
+  }
+  near(camera.x1, 54); assert.ok(camera.x2 < 846);
+  advance(sim, s, 1); camera = sim.camera(s);
+  near(camera.x1, 54); assert.ok(camera.x2 > previous.x2 && camera.x2 < 846);
+  advance(sim, s, 5); camera = sim.camera(s);
+  near(camera.x1, 54); near(camera.x2, 846);
+  const before = [s.x1, s.x2], scale = camera.k;
+  advance(sim, s, 20); camera = sim.camera(s);
+  near(camera.x1, 54); near(camera.x2, 846); assert.ok(camera.k < scale);
+  assert.ok(s.x1 < before[0] && s.x2 > before[1]);
+  assert.ok(camera.X(0) > camera.x1 && camera.X(0) < camera.x2);
+});
+
+test('collision camera keeps the fixed world origin visible and delays the slower edge', () => {
+  const { api } = lab(); api.load(4);
+  const sim = api.sims[4], s = api.S;
+  const end = s.contact.at + s.contact.duration;
+  sim.evaluate(s, end + 5);
+  let camera = sim.camera(s);
+  near(camera.x1, 54); assert.ok(camera.x2 < 846);
+  sim.evaluate(s, end + 20); camera = sim.camera(s);
+  near(camera.x1, 54); near(camera.x2, 846);
+  const center = camera.X(0), scale = camera.k;
+  near(camera.X(1) - center, scale);
+  for (const [u1, u2] of [[6, 6], [-6, -5], [0, 0], [6, -6]]) {
+    Object.assign(s.p, { u1, u2, e: 0 }); sim.reset(s); sim.evaluate(s, 300);
+    camera = sim.camera(s);
+    assert.ok(camera.X(0) >= 90 && camera.X(0) <= 810);
+    boundedVectors(sim.render(s));
+  }
 });
