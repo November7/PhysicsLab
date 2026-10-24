@@ -105,9 +105,10 @@ const VW = 900, VH = 400, GH = 640;
 function arrow(x1, y1, x2, y2, key, label, dx = 0, dy = -7, always = false) {
   if (!state.showVectors && !always) return '';
   const vx = x2 - x1, vy = y2 - y1, length = Math.hypot(vx, vy), pad = 18;
-  if (length < 3 || x1 < pad || x1 > VW - pad || y1 < pad || y1 > VH - pad) return '';
+  if ((length < 3 && key !== 'v') || x1 < pad || x1 > VW - pad || y1 < pad || y1 > VH - pad) return '';
   // Jeden współczynnik skraca obie składowe, zachowując kierunek wektora.
-  let ratio = Math.min(1, 200 / length);
+  // Mała prędkość zachowuje czytelny grot; zerowa ma samą etykietę.
+  let ratio = length === 0 ? 1 : key === 'v' ? clamp(length, 8, 200) / length : Math.min(1, 200 / length);
   if (vx > 0) ratio = Math.min(ratio, (VW - pad - x1) / vx);
   if (vx < 0) ratio = Math.min(ratio, (pad - x1) / vx);
   if (vy > 0) ratio = Math.min(ratio, (VH - pad - y1) / vy);
@@ -115,7 +116,7 @@ function arrow(x1, y1, x2, y2, key, label, dx = 0, dy = -7, always = false) {
   x2 = x1 + vx * ratio; y2 = y1 + vy * ratio;
   const labelPad = Math.min(VW / 2, Math.max(24, label.length * 4.5 + 12));
   const c = COLORS[key];
-  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.5" marker-end="url(#m-${key})"/>` +
+  return (length > 0 ? `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.5" marker-end="url(#m-${key})"/>` : '') +
     `<text x="${clamp(x2 + dx, labelPad, VW - labelPad)}" y="${clamp(y2 + dy, 20, VH - 14)}" text-anchor="middle" font-size="14" font-weight="400" style="fill:${c};paint-order:stroke;stroke:#f9fbfe;stroke-width:2px">${label}</text>`;
 }
 
