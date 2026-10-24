@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="AlgorithmsLab - interaktywne symulacje znanych algorytmów.">
-    <title>AlgorithmsLab</title>
+    <meta name="description" content="PhysicsLab - interaktywne symulacje zjawisk fizycznych.">
+    <title>PhysicsLab</title>
     <link rel="stylesheet" href="vendor/github-markdown.min.css">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <main class="page markdown-body">
       <div id="readme">Ładowanie…</div>
-      <section id="algorithms" hidden>
+      <section id="physics" hidden>
         <h2>Algorytmy</h2>
-        <ul id="algorithmIndex"></ul>
+        <ul id="physicsIndex"></ul>
       </section>
     </main>
     <script src="vendor/marked.min.js"></script>
@@ -27,7 +27,7 @@
       }
 
       function renderAlgorithms(items) {
-        const list = document.getElementById('algorithmIndex');
+        const list = document.getElementById('physicsIndex');
         list.replaceChildren(...items.map(item => {
           const li = document.createElement('li');
           if (item.status === 'published' && item.url) {
@@ -41,7 +41,7 @@
           }
           return li;
         }));
-        document.getElementById('algorithms').hidden = false;
+        document.getElementById('physics').hidden = false;
       }
 
       (async () => {
