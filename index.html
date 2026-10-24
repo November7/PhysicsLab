@@ -12,7 +12,7 @@
     <main class="page markdown-body">
       <div id="readme">Ładowanie…</div>
       <section id="physics" hidden>
-        <h2>Algorytmy</h2>
+        <h2>Symulacje fizyczne</h2>
         <ul id="physicsIndex"></ul>
       </section>
     </main>
@@ -26,7 +26,7 @@
         return type === 'json' ? response.json() : response.text();
       }
 
-      function renderAlgorithms(items) {
+      function renderSimulations(items) {
         const list = document.getElementById('physicsIndex');
         list.replaceChildren(...items.map(item => {
           const li = document.createElement('li');
@@ -55,7 +55,7 @@
           console.error(error);
         }
         try {
-          renderAlgorithms(await load('simulations.json', 'json'));
+          renderSimulations(await load('simulations.json', 'json'));
         } catch (error) {
           console.error(error);
         }
