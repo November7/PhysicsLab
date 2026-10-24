@@ -11,8 +11,6 @@ Projekt jest przeznaczony do nauki poprzez eksperymentowanie. Użytkownik może 
 
 README oraz symulacje w tym repozytorium są tworzone przy użyciu sztucznej inteligencji.
 
-Lista dostępnych symulacji znajduje się na [GitHub Pages](https://november7.github.io/PhysicsLab/).
-
 # English
 
 This repository is a collection of interactive physics simulations. The examples are built as HTML, CSS, and JavaScript pages that run directly in the browser, also offline. The simulations cover topics from various branches of physics, including mechanics, optics, electricity, magnetism, thermodynamics, and modern physics.
@@ -20,5 +18,3 @@ This repository is a collection of interactive physics simulations. The examples
 The project is designed for learning through experimentation. Users can observe virtual experiments, modify parameters, and explore relationships between physical quantities.
 
 This README and the simulations in this repository are created using artificial intelligence.
-
-The list of available simulations is available on [GitHub Pages](https://november7.github.io/PhysicsLab/).
