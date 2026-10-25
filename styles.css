@@ -158,6 +158,26 @@ input[type=checkbox] { accent-color: var(--accent); }
 
 footer { font-size: 12px; color: var(--muted); padding: 19px 2px 0; }
 
+.project-notice {
+  width: calc(100% - 64px);
+  max-width: 1376px;
+  margin: 0 auto;
+  padding: 16px 0 24px;
+  border-top: 1px solid var(--line);
+  color: #8491a3;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.project-notice p { margin: 0; }
+.project-notice p + p { margin-top: 4px; }
+.project-notice strong { font-weight: 500; }
+.project-notice a { color: inherit; text-decoration: underline; }
+.project-notice a:focus-visible { outline: 3px solid #e88b37; outline-offset: 3px; }
+.index-page .project-notice { width: calc(100% - 48px); }
+@media (prefers-color-scheme: dark) {
+  .index-page .project-notice { color: #8b949e; border-color: #3d444d; }
+}
+
 /* magnetic field: shared lab layout with a responsive Canvas stage */
 .magnetic-lab {
   --field-positive: var(--red);
@@ -187,6 +207,7 @@ footer { font-size: 12px; color: var(--muted); padding: 19px 2px 0; }
 
 @media (max-width: 900px) {
   main, .header-inner { padding-left: 16px; padding-right: 16px; }
+  .project-notice { width: calc(100% - 32px); }
   .lab { grid-template-columns: 1fr; }
   .formulas { grid-template-columns: 1fr; }
   .formulas > div + div { border-left: 0; border-top: 1px solid var(--line); }
@@ -194,6 +215,7 @@ footer { font-size: 12px; color: var(--muted); padding: 19px 2px 0; }
 }
 @media (max-width: 480px) {
   .index-page .page { padding: 20px 16px; }
+  .index-page .project-notice { width: calc(100% - 32px); }
   .controls, .ctl-grid { grid-template-columns: minmax(0, 1fr); }
   .ctl label { flex-wrap: wrap; gap: 4px 8px; }
 }
