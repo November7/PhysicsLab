@@ -19,9 +19,13 @@ Symulacje, opisy, wzory, obliczenia oraz ilustracje mogą zawierać błędy, nie
 
 Przed wykorzystaniem pomysłów lub kodu we własnych materiałach edukacyjnych należy niezależnie zweryfikować modele, założenia, obliczenia i opisy. Informacja o pokazowym charakterze projektu opisuje jego przeznaczenie i ograniczenia, nie wprowadza dodatkowych ograniczeń praw przyznanych przez licencję GPL v3.
 
-### Dostępne symulacje
+### Dostępne symulacje (między innymi):
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue?logo=github)](https://november7.github.io/PhysicsLab/)
+| Moduł | Zakres |
+| --- | --- |
+| [Zasady dynamiki Newtona](newton.html) | Bezwładność, siła i przyspieszenie, tarcie, akcja i reakcja, rzut ukośny oraz zderzenia. |
+| [Optyka](optics.html) | Odbicie i załamanie światła oraz powstawanie obrazów w soczewkach i zwierciadłach. |
+| [Pole magnetyczne](magnetic-field.html) | Pole przewodników z prądem, linie pola, kierunek prądu i zasada superpozycji. |
 
 Wybierz moduł, a następnie zmieniaj parametry i przeciągaj dostępne obiekty, aby obserwować zmiany wizualizacji. Interfejs symulacji jest w języku polskim.
 
@@ -109,9 +113,13 @@ The simulations, descriptions, formulas, calculations, and illustrations may con
 
 Before reusing ideas or code in educational materials, independently verify the models, assumptions, calculations, and explanations. This statement describes the project's intended purpose and limitations; it does not impose additional restrictions on the rights granted by GPL v3.
 
-### Available simulations
+### Available simulations (among others):
 
-[![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue?logo=github)](https://november7.github.io/PhysicsLab/)
+| Module | Scope |
+| --- | --- |
+| [Newton's laws of motion](newton.html) | Inertia, force and acceleration, friction, action and reaction, projectile motion, and collisions. |
+| [Optics](optics.html) | Reflection and refraction of light, and image formation in lenses and mirrors. |
+| [Magnetic field](magnetic-field.html) | Fields of current-carrying conductors, field lines, current direction, and superposition. |
 
 Choose a module, then adjust its parameters and drag the available objects to observe changes in the visualization. The simulation interface is in Polish.
 
