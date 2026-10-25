@@ -1,1 +1,2 @@
-/tests/artifacts/
+# Local tests and generated test artifacts
+/tests/
