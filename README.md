@@ -1,4 +1,4 @@
-# PhysicsLab
+## PhysicsLab
 
 [![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue?logo=github)](https://november7.github.io/PhysicsLab/)
 [![Language-English-success](https://img.shields.io/badge/Language-English-success)](#english)
