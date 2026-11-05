@@ -16,5 +16,11 @@
     "description": "Pole magnetyczne przewodników z prądem: linie pola, kierunek prądu i zasada superpozycji.",
     "url": "magnetic-field.html",
     "status": "published"
+  },
+  {
+    "title": "Wahadło matematyczne i fizyczne",
+    "description": "Symulacja wykonana przez Fable 5.5.",
+    "url": "pendulum.html",
+    "status": "published"
   }
 ]
